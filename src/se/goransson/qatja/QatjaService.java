@@ -22,12 +22,21 @@ import java.io.OutputStream;
 import java.io.UnsupportedEncodingException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.util.concurrent.ConcurrentHashMap;
 
+import se.goransson.qatja.messages.MQTTConnack;
 import se.goransson.qatja.messages.MQTTConnect;
 import se.goransson.qatja.messages.MQTTMessage;
 import se.goransson.qatja.messages.MQTTPingreq;
+import se.goransson.qatja.messages.MQTTPuback;
+import se.goransson.qatja.messages.MQTTPubcomp;
 import se.goransson.qatja.messages.MQTTPublish;
+import se.goransson.qatja.messages.MQTTPubrec;
+import se.goransson.qatja.messages.MQTTPubrel;
+import se.goransson.qatja.messages.MQTTSuback;
 import se.goransson.qatja.messages.MQTTSubscribe;
+import se.goransson.qatja.messages.MQTTUnsuback;
+import se.goransson.qatja.messages.MQTTUnsubscribe;
 import android.app.Service;
 import android.content.Intent;
 import android.os.Binder;
@@ -66,8 +75,11 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 	private ConnectedThread mConnectedThread;
 
 	/** Thread to handle ping requests and responses */
-	private PingThread mPingThread;
+	private KeepaliveThread mKeepaliveThread;
 
+	/** Keepalive timer */
+	private int KEEP_ALIVE_TIMER = 3000;
+	
 	/** */
 	private Handler mHandler = null;
 
@@ -83,10 +95,13 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 
 	private boolean clean_session = true;
 
+	private ConcurrentHashMap<Integer, MQTTMessage> sentPackages = new ConcurrentHashMap<Integer, MQTTMessage>();
+	private ConcurrentHashMap<Integer, MQTTMessage> receivedPackages = new ConcurrentHashMap<Integer, MQTTMessage>();
+
 	// PING VARIABLES
 	private volatile boolean pingreqSent = false;
-	private volatile long pingtime = 0;
-	private volatile long lastaction = 0;
+	private volatile long pingTime = 0;
+	private volatile long lastAction = 0;
 
 	private boolean doAutomaticReconnect = false;
 	private Handler reconnectHandler = new Handler();
@@ -101,7 +116,7 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 	public void onCreate() {
 		super.onCreate();
 		if (DEBUG)
-			Log.i(TAG, "onCreate");
+			Log.d(TAG, "onCreate");
 
 		// TODO something when started
 
@@ -110,7 +125,7 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 	@Override
 	public int onStartCommand(Intent intent, int flags, int startId) {
 		if (DEBUG)
-			Log.i(TAG, "onStartCommand");
+			Log.d(TAG, "onStartCommand");
 		// Start a sticky service, the system will try to recreate this service
 		// if killed.
 
@@ -135,19 +150,19 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 		}
 
 		// Cancel any thread currently running a ping check
-		if (mPingThread != null) {
-			mPingThread.cancel();
-			mPingThread = null;
+		if (mKeepaliveThread != null) {
+			mKeepaliveThread.cancel();
+			mKeepaliveThread = null;
 		}
 
 		if (DEBUG)
-			Log.i(TAG, "onDestroy");
+			Log.d(TAG, "onDestroy");
 	}
 
 	@Override
 	public IBinder onBind(Intent intent) {
 		if (DEBUG)
-			Log.i(TAG, "onBind");
+			Log.d(TAG, "onBind");
 
 		return mBinder;
 	}
@@ -273,6 +288,7 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 	 */
 	public void subscribe(String[] topics, byte[] qoss) {
 		MQTTSubscribe subscribe = new MQTTSubscribe(topics, qoss);
+		addSentPackage(subscribe);
 		sendMessage(subscribe);
 	}
 
@@ -298,15 +314,23 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 //		// connect(host, port);
 //	}
 	
-	private void sendMessage(MQTTMessage msg) {
+	private synchronized void sendMessage(MQTTMessage msg) {
 		sendMessage(msg, true);
 	}
 
 	private synchronized void sendMessage(MQTTMessage msg, boolean mustBeConnected) {
+		if (DEBUG)
+			Log.d(TAG, "Sending message: " + MQTTHelper.decodePackageName(msg));
+		
 		if (mustBeConnected) {
-			if (getState() != STATE_CONNECTED) {
+			Log.i(TAG, "must be connected...");
+			Log.i(TAG, "STATE (cur): " + getState());
+			Log.i(TAG, "STATE (con): " + STATE_CONNECTED);
+						
+			if (getState() == STATE_CONNECTED) {
 				try {
 					mConnectedThread.write(msg.get());
+					lastAction = System.currentTimeMillis();
 				} catch (UnsupportedEncodingException e) {
 					e.printStackTrace();
 				} catch (IOException e) {
@@ -316,11 +340,13 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 				}
 			} else {
 				if (DEBUG)
-					Log.i(TAG, "Need to be connected to send messages");
+					Log.d(TAG, "Need to be connected to send " + MQTTHelper.decodePackageName(msg));
 			}
 		} else {
+			Log.i(TAG, "must NOT be connected...");
 			try {
 				mConnectedThread.write(msg.get());
+				lastAction = System.currentTimeMillis();
 			} catch (UnsupportedEncodingException e) {
 				e.printStackTrace();
 			} catch (IOException e) {
@@ -364,13 +390,13 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 			Log.d(TAG, "connect to: " + host);
 
 		// Cancel any thread currently running a ping check
-		if (mPingThread != null) {
-			mPingThread.cancel();
-			mPingThread = null;
+		if (mKeepaliveThread != null) {
+			mKeepaliveThread.cancel();
+			mKeepaliveThread = null;
 		}
 
 		// Cancel any thread attempting to make a connection
-		if (mState == STATE_CONNECTING) {
+		if (getState() == STATE_CONNECTING) {
 			if (mConnectThread != null) {
 				mConnectThread.cancel();
 				mConnectThread = null;
@@ -395,9 +421,9 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 			Log.d(TAG, "connected, Socket Type:");
 
 		// Cancel any thread currently running a ping check
-		if (mPingThread != null) {
-			mPingThread.cancel();
-			mPingThread = null;
+		if (mKeepaliveThread != null) {
+			mKeepaliveThread.cancel();
+			mKeepaliveThread = null;
 		}
 
 		// Cancel the thread that completed the connection
@@ -417,32 +443,26 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 		mConnectedThread.start();
 
 		// Start the ping check thread
-		mPingThread = new PingThread();
-		mPingThread.start();
+		mKeepaliveThread = new KeepaliveThread();
+		mKeepaliveThread.start();
 
 		// Send the connect message
 		connect(clientIdentifier);
 
-		setState(STATE_CONNECTED);
-
-		// Set the current time as the last action
-		lastaction = System.currentTimeMillis();
+//		setState(STATE_CONNECTED);
 	}
 
 	/**
 	 * Indicate that the connection attempt failed and notify the UI Activity.
 	 */
-	private void connectionFailed() {
+	private void connectionFailed(Exception e) {
 		if (DEBUG)
-			Log.d(TAG, "connectionFailed");
+			Log.d(TAG, "connectionFailed", e);
 
 		if (doAutomaticReconnect)
 			reconnect();
-
-		if (mHandler != null)
-			// Give the new state to the Handler so the UI Activity can update
-			mHandler.obtainMessage(STATE_CHANGE, STATE_CONNECTION_FAILED, -1)
-					.sendToTarget();
+		
+		setState(STATE_CONNECTION_FAILED);
 	}
 
 	/**
@@ -458,9 +478,9 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 
 	public void disconnect() {
 		// Cancel any thread currently running a ping check
-		if (mPingThread != null) {
-			mPingThread.cancel();
-			mPingThread = null;
+		if (mKeepaliveThread != null) {
+			mKeepaliveThread.cancel();
+			mKeepaliveThread = null;
 		}
 
 		// Cancel the thread that completed the connection
@@ -488,7 +508,12 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 			// Give the new state to the Handler so the UI Activity can update
 			mHandler.obtainMessage(STATE_CHANGE, state, -1).sendToTarget();
 	}
-
+	
+	/**
+	 * Get the connection state
+	 * 
+	 * @return the state
+	 */
 	public synchronized int getState() {
 		return mState;
 	}
@@ -497,28 +522,93 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 		KEEP_ALIVE_TIMER = milliseconds;
 	}
 
-	private int KEEP_ALIVE_TIMER = 10000;
+	private void addSentPackage(MQTTMessage msg) {
+		// System.out.println("addPackage(): " + msg.getPackageIdentifier());
+		sentPackages.put(msg.getPackageIdentifier(), msg);
+	}
 
-	private class PingThread extends Thread {
+	private void removeSentPackage(MQTTMessage msg) {
+		// System.out.println("removePackage(): " + msg.getPackageIdentifier());
+		sentPackages.remove(msg.getPackageIdentifier());
+	}
+	
+	private void addReceivedPackage(MQTTMessage msg) {
+		// System.out.println("addPackage(): " + msg.getPackageIdentifier());
+		receivedPackages.put(msg.getPackageIdentifier(), msg);
+	}
 
-		private static final int KEEP_ALIVE_GRACE = 2000;
+	private void removeReceivedPackage(MQTTMessage msg) {
+		// System.out.println("removePackage(): " + msg.getPackageIdentifier());
+		receivedPackages.remove(msg.getPackageIdentifier());
+	}
+	
+	/**
+	 * Make sure to resend packages that haven't been successfully sent. TODO
+	 */
+	private void resendPackages() {
+		for (MQTTMessage msg : sentPackages.values()) {
+			if (msg instanceof MQTTPublish) {
+				((MQTTPublish) msg).setDup();
+			}
+			sendMessage(msg);
+		}
+		
+		for (MQTTMessage msg : receivedPackages.values()) {
+			if (msg instanceof MQTTPublish) {
+				((MQTTPublish) msg).setDup();
+			}
+			sendMessage(msg);
+		}
+	}
 
-		public PingThread() {
+	private synchronized void handleSubscriptions(MQTTMessage msg) {
+		if (msg instanceof MQTTSuback) {
+			MQTTSuback suback = (MQTTSuback) msg;
+
+			MQTTSubscribe subscribe = (MQTTSubscribe) sentPackages.get(suback
+					.getPackageIdentifier());
+			
+			String[] topicFilters = subscribe.getTopicFilters();
+			byte[] qoss = suback.getPayload();
+			for (int i = 0; i < qoss.length; i++) {
+				switch (qoss[i]) {
+				case SUBSCRIBE_SUCCESS_AT_MOST_ONCE:
+				case SUBSCRIBE_SUCCESS_AT_LEAST_ONCE:
+				case SUBSCRIBE_SUCCESS_EXACTLY_ONCE:
+					Log.d(TAG, "Success subscribing to " + topicFilters[i]);
+					break;
+				case SUBSCRIBE_FAILURE:
+					Log.d(TAG, "Failed subscribing to " + topicFilters[i]);
+					break;
+				}
+			}
+		} else if (msg instanceof MQTTUnsuback) {
+			MQTTUnsuback unsuback = (MQTTUnsuback) msg;
+
+			MQTTUnsubscribe unsubscribe = (MQTTUnsubscribe) sentPackages
+					.get(unsuback.getPackageIdentifier());
+			String[] topicFilters = unsubscribe.getTopicFilters();
+			for (int i = 0; i < topicFilters.length; i++) {
+				Log.d(TAG, "Success unsubscribing to " + topicFilters[i]);
+			}
+		}
+	}
+	
+	private class KeepaliveThread extends Thread {
+
+		public KeepaliveThread() {
 			if (DEBUG)
 				Log.d(TAG, "CREATE mPingthread ");
-
-			// Set the current time as the last action
-			lastaction = System.currentTimeMillis();
 		}
 
 		@Override
 		public void run() {
 			if (DEBUG)
-				Log.i(TAG, "BEGIN mPingthread");
+				Log.d(TAG, "BEGIN mPingthread");
 
-			boolean local_pingreq = pingreqSent;
-			long local_pingtime = pingtime;
-			long local_lastaction = lastaction;
+			boolean local_pingreqSent = pingreqSent;
+			long local_pingTime = pingTime;
+			long local_lastAction = lastAction;
 
 			int local_state = mState;
 
@@ -527,43 +617,43 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 					local_state = mState;
 
 					if (DEBUG)
-						Log.i(TAG, "Detected change in volatile var: state");
+						Log.d(TAG, "Detected change in volatile var: state");
 				}
 
 				if (local_state == STATE_CONNECTED) {
-					if (local_pingreq != pingreqSent) {
+					if (local_pingreqSent != pingreqSent) {
 						// TODO React to when the listener thread changed the
 						// pingreq
-						local_pingreq = pingreqSent;
+						local_pingreqSent = pingreqSent;
 
 						if (DEBUG)
-							Log.i(TAG,
+							Log.d(TAG,
 									"Detected change in volatile var: pingreq");
 					}
 
-					if (local_lastaction != lastaction) {
+					if (local_lastAction != lastAction) {
 						// TODO React to when a new action is set
-						local_lastaction = lastaction;
+						local_lastAction = lastAction;
 
 						if (DEBUG)
-							Log.i(TAG,
+							Log.d(TAG,
 									"Detected change in volatile var: lastaction");
 					}
 
-					if (local_pingreq) {
+					if (local_pingreqSent) {
 						// If we're expecting a ping response; detect if we've
 						// timed out.
-						if ((System.currentTimeMillis() - local_lastaction) > (KEEP_ALIVE_TIMER + KEEP_ALIVE_GRACE)) {
+//						if ((System.currentTimeMillis() - local_lastAction) > (KEEP_ALIVE_TIMER + KEEP_ALIVE_GRACE)) {
+						if ((System.currentTimeMillis() - local_lastAction) > (KEEP_ALIVE_TIMER + KEEP_ALIVE_TIMER/2)) {
 							// Disconnect?
 							// TODO Disconnect
-							// if (DEBUG)
-							Log.i(TAG,
-									"Ping time out detected, should disconnect?");
+							if (DEBUG)
+								Log.d(TAG, "Ping time out detected, should disconnect?");
 							pingreqSent = false;
 						}
 					} else {
 						// If the last action was too long ago; send a ping
-						if ((System.currentTimeMillis() - local_lastaction) > KEEP_ALIVE_TIMER) {
+						if ((System.currentTimeMillis() - local_lastAction) > KEEP_ALIVE_TIMER) {
 							MQTTPingreq pingreq = new MQTTPingreq();
 							sendMessage(pingreq);
 							pingreqSent = true;
@@ -575,7 +665,7 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 
 				} else {
 					// if (DEBUG)
-					// Log.i(TAG, "Not connected??");
+					// Log.d(TAG, "Not connected??");
 					Thread.currentThread().interrupt();
 				}
 
@@ -617,7 +707,7 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 
 		public void run() {
 			if (DEBUG)
-				Log.i(TAG, "BEGIN mConnectThread");
+				Log.d(TAG, "BEGIN mConnectThread");
 
 			setName("ConnectThread");
 
@@ -637,7 +727,7 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 							"unable to close() socket during connection failure",
 							e2);
 				}
-				connectionFailed();
+				connectionFailed(e);
 				return;
 			}
 
@@ -686,75 +776,155 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 
 			mmInStream = tmpIn;
 			mmOutStream = tmpOut;
+			
+			if (DEBUG)
+				Log.d(TAG, "BEGIN mConnectedThread");
 		}
 
 		public void run() {
-			if (DEBUG)
-				Log.i(TAG, "BEGIN mConnectedThread");
-
+			int len;
 			byte[] buffer = new byte[16384];
-			int bytes;
 
 			// Keep listening to the InputStream while connected
 			while (!isInterrupted()) {
 				try {
 					// Read from the InputStream
-					bytes = mmInStream.read(buffer);
+					len = mmInStream.read(buffer);
 
 					if (mHandler != null)
-						// Send the obtained bytes to the UI Activity
-						// mHandler.obtainMessage(MQTT_RAW_READ, bytes, -1,
-						// buffer)
-						// .sendToTarget();
 
-						if (bytes > 0) {
+						if (len > 0) {
 							byte type = MQTTHelper.decode(buffer);
 
-//							// Share the recieved msg type back to activity
-//							if (mHandler != null)
-//								mHandler.obtainMessage(msg.type, msg)
-//										.sendToTarget();
+							if (DEBUG)
+								Log.d(TAG, "Received " + MQTTHelper.decodePackageName(type));
 
 							// Handle automatic responses here
 							switch (type) {
+							case CONNECT:
+								// Client should never receive CONNECT message
+								break;
+								
+							case CONNACK:
+								MQTTConnack connack = new MQTTConnack(buffer, len);
+								switch (connack.getReturnCode()) {
+								case CONNECTION_ACCEPTED:
+									if (DEBUG)
+										Log.d(TAG, "Connected");
+									setState(STATE_CONNECTED);
+									break;
+								case CONNECTION_REFUSED_VERSION:
+									if (DEBUG)
+										Log.d(TAG, "Failed to connect, unaccebtable protocol version");
+									setState(STATE_CONNECTION_FAILED);
+									break;
+								case CONNECTION_REFUSED_IDENTIFIER:
+									if (DEBUG)
+										Log.d(TAG, "Failed to connect, identifier rejected");
+									setState(STATE_CONNECTION_FAILED);
+									break;
+								case CONNECTION_REFUSED_SERVER:
+									if (DEBUG)
+										Log.d(TAG, "Failed to connect, server unavailable");
+									setState(STATE_CONNECTION_FAILED);
+									break;
+								case CONNECTION_REFUSED_USER:
+									if (DEBUG)
+										Log.d(TAG, "Failed to connect, bad username or password");
+									setState(STATE_CONNECTION_FAILED);
+									break;
+								case CONNECTION_REFUSED_AUTH:
+									if (DEBUG)
+										Log.d(TAG, "Failed to connect, not authorized");
+									setState(STATE_CONNECTION_FAILED);
+									break;
+								}
+								break;
+								
 							case PUBLISH:
-								// No need to act on normal PUBLISH messages.
-								break;
-							case PUBACK:
-								break;
-							case PUBREC:
-								break;
-							case PUBREL:
-								break;
-							case PUBCOMP:
-								break;
-							case SUBSCRIBE:
-								// The client shouldn't receive any SUBSCRIBE
-								// messages.
-								break;
-							case SUBACK:
-								break;
-							case UNSUBSCRIBE:
-								break;
-							case UNSUBACK:
-								break;
-							case PINGREQ:
-								// The client shouldn't receive any PINGREQ
-								// messages.
-								break;
-							case PINGRESP:
-								// TODO PINGREQ was successful, connections
-								// still
-								// alive.
-								pingreqSent = false;
+								MQTTPublish publish = new MQTTPublish(buffer,
+										len);
+								switch (publish.getQoS()) {
+								case AT_MOST_ONCE:
+									// Do nothing
+									break;
+								case AT_LEAST_ONCE:
+									// Send PUBACK
+									MQTTPuback puback_ = new MQTTPuback(
+											publish.getPackageIdentifier());
+									sendMessage(puback_);
 
-								if (DEBUG)
-									Log.i(TAG, "Got ping response");
+									break;
+								case EXACTLY_ONCE:
+									// Send PUBREC and store message
+									MQTTPubrec pubrec_ = new MQTTPubrec(
+											publish.getPackageIdentifier());
+									addReceivedPackage(pubrec_);
+									sendMessage(pubrec_);
+
+									break;
+								}
+								mHandler.obtainMessage(PUBLISH, mState, -1, publish).sendToTarget();
+								break;
+
+							case PUBACK:
+								MQTTPuback puback = new MQTTPuback(buffer, len);
+								removeSentPackage(puback);
+								break;
+								
+							case PUBREC:
+								MQTTPubrec pubrec = new MQTTPubrec(buffer, len);
+								int packageIdentifier = pubrec.getPackageIdentifier();
+								removeSentPackage(pubrec);
+
+								MQTTPubrel pubrel_ = new MQTTPubrel(packageIdentifier);
+								addSentPackage(pubrel_);
+								sendMessage(pubrel_);
+								break;
+								
+							case PUBREL:
+								MQTTPubrel pubrel = new MQTTPubrel(buffer, len);
+								removeReceivedPackage(pubrel);
+								
+								MQTTPubcomp pubcomp_ = new MQTTPubcomp(pubrel.getPackageIdentifier());
+								sendMessage(pubcomp_);
+								break;
+								
+							case PUBCOMP:
+								MQTTPubcomp pubcomp = new MQTTPubcomp(buffer, len);
+								removeReceivedPackage(pubcomp);
+								break;
+								
+							case SUBSCRIBE:
+								// Client doesn't receive this message
+								break;
+								
+							case SUBACK:
+								MQTTSuback suback = new MQTTSuback(buffer, len);
+								handleSubscriptions(suback);
+								break;
+								
+							case UNSUBSCRIBE:
+								// Client doesn't receive this message
+								break;
+								
+							case UNSUBACK:
+								MQTTUnsuback unsuback = new MQTTUnsuback(buffer, len);
+								handleSubscriptions(unsuback);
+								removeSentPackage(unsuback);
+								break;
+								
+							case PINGREQ:
+								// Client doesn't receive this message
+								pingTime = System.currentTimeMillis();
+								break;
+								
+							case PINGRESP:
+								pingreqSent = false;
 
 								break;
 							case DISCONNECT:
-								// TODO close all threads when receiving the
-								// DISCONNECT message.
+								// Client doesn't receive this message
 								break;
 							}
 						}
@@ -779,17 +949,10 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 		 *            The bytes to write
 		 */
 		public synchronized void write(byte[] buffer) {
-			Log.i(TAG, "write()");
-			Log.i(TAG, new String(buffer));
+			Log.d(TAG, "write()");
+			Log.d(TAG, new String(buffer));
 			try {
 				mmOutStream.write(buffer);
-
-				if (mHandler != null)
-					// Share the sent message back to the UI Activity
-					mHandler.obtainMessage(MQTT_RAW_PUBLISH, -1, -1, buffer)
-							.sendToTarget();
-
-				lastaction = System.currentTimeMillis();
 			} catch (IOException e) {
 				Log.e(TAG, "Exception during write", e);
 
