@@ -79,7 +79,7 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 
 	/** Keepalive timer */
 	private int KEEP_ALIVE_TIMER = 3000;
-	
+
 	/** */
 	private Handler mHandler = null;
 
@@ -196,7 +196,6 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 		sendMessage(connect, false);
 	}
 
-
 	/**
 	 * Publish a message (String) to a specified topic.
 	 * 
@@ -276,7 +275,7 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 		byte[] qoss = { qos };
 		subscribe(topics, qoss);
 	}
-	
+
 	/**
 	 * Subscribe to multiple topics
 	 * 
@@ -313,20 +312,17 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 //		// if (host != null)
 //		// connect(host, port);
 //	}
-	
+
 	private synchronized void sendMessage(MQTTMessage msg) {
 		sendMessage(msg, true);
 	}
 
-	private synchronized void sendMessage(MQTTMessage msg, boolean mustBeConnected) {
+	private synchronized void sendMessage(MQTTMessage msg,
+			boolean mustBeConnected) {
 		if (DEBUG)
 			Log.d(TAG, "Sending message: " + MQTTHelper.decodePackageName(msg));
-		
+
 		if (mustBeConnected) {
-			Log.i(TAG, "must be connected...");
-			Log.i(TAG, "STATE (cur): " + getState());
-			Log.i(TAG, "STATE (con): " + STATE_CONNECTED);
-						
 			if (getState() == STATE_CONNECTED) {
 				try {
 					mConnectedThread.write(msg.get());
@@ -340,10 +336,11 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 				}
 			} else {
 				if (DEBUG)
-					Log.d(TAG, "Need to be connected to send " + MQTTHelper.decodePackageName(msg));
+					Log.d(TAG,
+							"Need to be connected to send "
+									+ MQTTHelper.decodePackageName(msg));
 			}
 		} else {
-			Log.i(TAG, "must NOT be connected...");
 			try {
 				mConnectedThread.write(msg.get());
 				lastAction = System.currentTimeMillis();
@@ -357,34 +354,73 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 		}
 	}
 
+	/**
+	 * Set MQTT broker host, can be either a domain name or an ip address
+	 * 
+	 * @param host
+	 *            the host
+	 */
 	public void setHost(String host) {
 		this.host = host;
 	}
 
+	/**
+	 * Set MQTT broker port
+	 * 
+	 * @param port
+	 */
 	public void setPort(int port) {
 		this.port = port;
 	}
 
-	public void setId(String uid) {
-		this.clientIdentifier = uid;
+	/**
+	 * Set client identifier
+	 * 
+	 * @param clientIdentifier
+	 *            the identifier
+	 */
+	public void setId(String clientIdentifier) {
+		this.clientIdentifier = clientIdentifier;
 	}
 
+	/**
+	 * Set clean session
+	 * 
+	 * @param clean_session
+	 */
 	public void setCleanSession(boolean clean_session) {
 		this.clean_session = clean_session;
 	}
 
+	/**
+	 * Set automatic reconnect
+	 * 
+	 * @param reconnect
+	 */
 	public void setReconnect(boolean reconnect) {
 		doAutomaticReconnect = reconnect;
 	}
 
+	/**
+	 * Attempt to reconnect after {@link #RECONNECT_TIMER} milliseconds
+	 */
 	public void reconnect() {
 		reconnectHandler.postDelayed(recoonectRunnable, RECONNECT_TIMER);
 	}
 
-	public void reconnect(long millis) {
-		reconnectHandler.postDelayed(recoonectRunnable, millis);
+	/**
+	 * Attempt to reconnect after delay
+	 * 
+	 * @param milliseconds
+	 *            the delay
+	 */
+	public void reconnect(long milliseconds) {
+		reconnectHandler.postDelayed(recoonectRunnable, milliseconds);
 	}
 
+	/**
+	 * Start a connection attempt
+	 */
 	public synchronized void connect() {
 		if (DEBUG)
 			Log.d(TAG, "connect to: " + host);
@@ -416,7 +452,13 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 		setState(STATE_CONNECTING);
 	}
 
-	public synchronized void connected(Socket socket) {
+	/**
+	 * Service connected
+	 * 
+	 * @param socket
+	 *            the connected socket
+	 */
+	private synchronized void connected(Socket socket) {
 		if (DEBUG)
 			Log.d(TAG, "connected, Socket Type:");
 
@@ -449,7 +491,7 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 		// Send the connect message
 		connect(clientIdentifier);
 
-//		setState(STATE_CONNECTED);
+		// setState(STATE_CONNECTED);
 	}
 
 	/**
@@ -461,7 +503,7 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 
 		if (doAutomaticReconnect)
 			reconnect();
-		
+
 		setState(STATE_CONNECTION_FAILED);
 	}
 
@@ -476,6 +518,9 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 			reconnect();
 	}
 
+	/**
+	 * Disconnect the MQTT service
+	 */
 	public void disconnect() {
 		// Cancel any thread currently running a ping check
 		if (mKeepaliveThread != null) {
@@ -498,6 +543,12 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 		setState(STATE_NONE);
 	}
 
+	/**
+	 * Set the connection state
+	 * 
+	 * @param state
+	 *            the state
+	 */
 	private synchronized void setState(int state) {
 		if (DEBUG)
 			Log.d(TAG, "setState() " + mState + " -> " + state);
@@ -508,7 +559,7 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 			// Give the new state to the Handler so the UI Activity can update
 			mHandler.obtainMessage(STATE_CHANGE, state, -1).sendToTarget();
 	}
-	
+
 	/**
 	 * Get the connection state
 	 * 
@@ -518,30 +569,60 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 		return mState;
 	}
 
+	/**
+	 * Set keep alive timer in milliseconds
+	 * 
+	 * @param milliseconds
+	 *            the time
+	 */
 	public void setKeepAlive(int milliseconds) {
 		KEEP_ALIVE_TIMER = milliseconds;
 	}
 
+	/**
+	 * Add MQTTMessage to the list of sent packages, used for QoS
+	 * {@link #AT_MOST_ONCE} and {@link #EXACTLY_ONCE}
+	 * 
+	 * @param msg
+	 *            the MQTTMessage
+	 */
 	private void addSentPackage(MQTTMessage msg) {
-		// System.out.println("addPackage(): " + msg.getPackageIdentifier());
 		sentPackages.put(msg.getPackageIdentifier(), msg);
 	}
 
+	/**
+	 * Remove MQTTMessage from the list of sent packages, used for QoS
+	 * {@link #AT_MOST_ONCE} and {@link #EXACTLY_ONCE}
+	 * 
+	 * @param msg
+	 *            the MQTTMessage
+	 */
 	private void removeSentPackage(MQTTMessage msg) {
-		// System.out.println("removePackage(): " + msg.getPackageIdentifier());
 		sentPackages.remove(msg.getPackageIdentifier());
 	}
-	
+
+	/**
+	 * Add MQTTMessage to the list of received packages, used for QoS
+	 * {@link #AT_MOST_ONCE} and {@link #EXACTLY_ONCE}
+	 * 
+	 * @param msg
+	 *            the MQTTMessage
+	 */
 	private void addReceivedPackage(MQTTMessage msg) {
-		// System.out.println("addPackage(): " + msg.getPackageIdentifier());
 		receivedPackages.put(msg.getPackageIdentifier(), msg);
 	}
 
+	/**
+	 * Remove MQTTMessage to the list of received packages, used for QoS
+	 * {@link #AT_MOST_ONCE} and {@link #EXACTLY_ONCE}
+	 * 
+	 * @param msg
+	 *            the MQTTMessage
+	 */
 	private void removeReceivedPackage(MQTTMessage msg) {
-		// System.out.println("removePackage(): " + msg.getPackageIdentifier());
 		receivedPackages.remove(msg.getPackageIdentifier());
 	}
-	
+
 	/**
 	 * Make sure to resend packages that haven't been successfully sent. TODO
 	 */
@@ -552,7 +633,7 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 			}
 			sendMessage(msg);
 		}
-		
+
 		for (MQTTMessage msg : receivedPackages.values()) {
 			if (msg instanceof MQTTPublish) {
 				((MQTTPublish) msg).setDup();
@@ -561,13 +642,19 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 		}
 	}
 
+	/**
+	 * Manages subscription messages
+	 * 
+	 * @param msg
+	 *            the message to handle
+	 */
 	private synchronized void handleSubscriptions(MQTTMessage msg) {
 		if (msg instanceof MQTTSuback) {
 			MQTTSuback suback = (MQTTSuback) msg;
 
 			MQTTSubscribe subscribe = (MQTTSubscribe) sentPackages.get(suback
 					.getPackageIdentifier());
-			
+
 			String[] topicFilters = subscribe.getTopicFilters();
 			byte[] qoss = suback.getPayload();
 			for (int i = 0; i < qoss.length; i++) {
@@ -593,7 +680,7 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 			}
 		}
 	}
-	
+
 	private class KeepaliveThread extends Thread {
 
 		public KeepaliveThread() {
@@ -643,12 +730,14 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 					if (local_pingreqSent) {
 						// If we're expecting a ping response; detect if we've
 						// timed out.
-//						if ((System.currentTimeMillis() - local_lastAction) > (KEEP_ALIVE_TIMER + KEEP_ALIVE_GRACE)) {
-						if ((System.currentTimeMillis() - local_lastAction) > (KEEP_ALIVE_TIMER + KEEP_ALIVE_TIMER/2)) {
+						// if ((System.currentTimeMillis() - local_lastAction) >
+						// (KEEP_ALIVE_TIMER + KEEP_ALIVE_GRACE)) {
+						if ((System.currentTimeMillis() - local_lastAction) > (KEEP_ALIVE_TIMER + KEEP_ALIVE_TIMER / 2)) {
 							// Disconnect?
 							// TODO Disconnect
 							if (DEBUG)
-								Log.d(TAG, "Ping time out detected, should disconnect?");
+								Log.d(TAG,
+										"Ping time out detected, should disconnect?");
 							pingreqSent = false;
 						}
 					} else {
@@ -660,8 +749,8 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 						}
 					}
 
-					// if (local_state != mState)
-					// local_state = mState;
+//					if (local_state != mState)
+//						local_state = mState;
 
 				} else {
 					// if (DEBUG)
@@ -776,7 +865,7 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 
 			mmInStream = tmpIn;
 			mmOutStream = tmpOut;
-			
+
 			if (DEBUG)
 				Log.d(TAG, "BEGIN mConnectedThread");
 		}
@@ -797,16 +886,20 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 							byte type = MQTTHelper.decode(buffer);
 
 							if (DEBUG)
-								Log.d(TAG, "Received " + MQTTHelper.decodePackageName(type));
+								Log.d(TAG,
+										"Received "
+												+ MQTTHelper
+														.decodePackageName(type));
 
 							// Handle automatic responses here
 							switch (type) {
 							case CONNECT:
 								// Client should never receive CONNECT message
 								break;
-								
+
 							case CONNACK:
-								MQTTConnack connack = new MQTTConnack(buffer, len);
+								MQTTConnack connack = new MQTTConnack(buffer,
+										len);
 								switch (connack.getReturnCode()) {
 								case CONNECTION_ACCEPTED:
 									if (DEBUG)
@@ -815,32 +908,37 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 									break;
 								case CONNECTION_REFUSED_VERSION:
 									if (DEBUG)
-										Log.d(TAG, "Failed to connect, unaccebtable protocol version");
+										Log.d(TAG,
+												"Failed to connect, unaccebtable protocol version");
 									setState(STATE_CONNECTION_FAILED);
 									break;
 								case CONNECTION_REFUSED_IDENTIFIER:
 									if (DEBUG)
-										Log.d(TAG, "Failed to connect, identifier rejected");
+										Log.d(TAG,
+												"Failed to connect, identifier rejected");
 									setState(STATE_CONNECTION_FAILED);
 									break;
 								case CONNECTION_REFUSED_SERVER:
 									if (DEBUG)
-										Log.d(TAG, "Failed to connect, server unavailable");
+										Log.d(TAG,
+												"Failed to connect, server unavailable");
 									setState(STATE_CONNECTION_FAILED);
 									break;
 								case CONNECTION_REFUSED_USER:
 									if (DEBUG)
-										Log.d(TAG, "Failed to connect, bad username or password");
+										Log.d(TAG,
+												"Failed to connect, bad username or password");
 									setState(STATE_CONNECTION_FAILED);
 									break;
 								case CONNECTION_REFUSED_AUTH:
 									if (DEBUG)
-										Log.d(TAG, "Failed to connect, not authorized");
+										Log.d(TAG,
+												"Failed to connect, not authorized");
 									setState(STATE_CONNECTION_FAILED);
 									break;
 								}
 								break;
-								
+
 							case PUBLISH:
 								MQTTPublish publish = new MQTTPublish(buffer,
 										len);
@@ -864,61 +962,67 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 
 									break;
 								}
-								mHandler.obtainMessage(PUBLISH, mState, -1, publish).sendToTarget();
+								mHandler.obtainMessage(PUBLISH, mState, -1,
+										publish).sendToTarget();
 								break;
 
 							case PUBACK:
 								MQTTPuback puback = new MQTTPuback(buffer, len);
 								removeSentPackage(puback);
 								break;
-								
+
 							case PUBREC:
 								MQTTPubrec pubrec = new MQTTPubrec(buffer, len);
-								int packageIdentifier = pubrec.getPackageIdentifier();
+								int packageIdentifier = pubrec
+										.getPackageIdentifier();
 								removeSentPackage(pubrec);
 
-								MQTTPubrel pubrel_ = new MQTTPubrel(packageIdentifier);
+								MQTTPubrel pubrel_ = new MQTTPubrel(
+										packageIdentifier);
 								addSentPackage(pubrel_);
 								sendMessage(pubrel_);
 								break;
-								
+
 							case PUBREL:
 								MQTTPubrel pubrel = new MQTTPubrel(buffer, len);
 								removeReceivedPackage(pubrel);
-								
-								MQTTPubcomp pubcomp_ = new MQTTPubcomp(pubrel.getPackageIdentifier());
+
+								MQTTPubcomp pubcomp_ = new MQTTPubcomp(
+										pubrel.getPackageIdentifier());
 								sendMessage(pubcomp_);
 								break;
-								
+
 							case PUBCOMP:
-								MQTTPubcomp pubcomp = new MQTTPubcomp(buffer, len);
+								MQTTPubcomp pubcomp = new MQTTPubcomp(buffer,
+										len);
 								removeReceivedPackage(pubcomp);
 								break;
-								
+
 							case SUBSCRIBE:
 								// Client doesn't receive this message
 								break;
-								
+
 							case SUBACK:
 								MQTTSuback suback = new MQTTSuback(buffer, len);
 								handleSubscriptions(suback);
 								break;
-								
+
 							case UNSUBSCRIBE:
 								// Client doesn't receive this message
 								break;
-								
+
 							case UNSUBACK:
-								MQTTUnsuback unsuback = new MQTTUnsuback(buffer, len);
+								MQTTUnsuback unsuback = new MQTTUnsuback(
+										buffer, len);
 								handleSubscriptions(unsuback);
 								removeSentPackage(unsuback);
 								break;
-								
+
 							case PINGREQ:
 								// Client doesn't receive this message
 								pingTime = System.currentTimeMillis();
 								break;
-								
+
 							case PINGRESP:
 								pingreqSent = false;
 

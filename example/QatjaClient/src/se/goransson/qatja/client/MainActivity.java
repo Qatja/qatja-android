@@ -1,10 +1,6 @@
 package se.goransson.qatja.client;
 
 
-import java.lang.ref.WeakReference;
-
-import javax.net.ssl.HandshakeCompletedListener;
-
 import se.goransson.qatja.MQTTConnectionConstants;
 import se.goransson.qatja.MQTTConstants;
 import se.goransson.qatja.QatjaService;
@@ -105,6 +101,7 @@ public class MainActivity extends Activity implements MQTTConnectionConstants,
 				case STATE_NONE:
 					Toast.makeText(MainActivity.this, "Not connected",
 							Toast.LENGTH_SHORT).show();
+					mController.showConnectionFragment();
 					return true;
 					
 				case STATE_CONNECTING:
@@ -128,10 +125,9 @@ public class MainActivity extends Activity implements MQTTConnectionConstants,
 
 			case PUBLISH:
 				MQTTPublish publish = (MQTTPublish) msg.obj;
-				String topic = publish.getTopicName();
-				byte[] payload = publish.getPayload();
-				String text = new String(payload);
-				mController.appendMessage(text);
+				StringBuilder sb = new StringBuilder(publish.getTopicName());
+				sb.append(" ").append(new String(publish.getPayload()));
+				mController.appendMessage(sb.toString());
 				return true;
 				
 			default:

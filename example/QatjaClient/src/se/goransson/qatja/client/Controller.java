@@ -1,13 +1,12 @@
 package se.goransson.qatja.client;
 
-
 import android.app.Activity;
 import android.app.Fragment;
 import android.app.FragmentManager;
 import android.os.Bundle;
 
 /**
- * Copyright 2014 Andreas Gšransson
+ * Copyright 2014 Andreas Goransson
  * 
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not
  * use this file except in compliance with the License. You may obtain a copy of
@@ -40,34 +39,37 @@ public class Controller {
 	}
 
 	public void showConnectionFragment() {
-		if (mConnectionFragment == null)
+		if (mConnectionFragment == null) {
 			mConnectionFragment = new ConnectionFragment();
 
-		Bundle args = new Bundle();
-		// Add arguments
-		mConnectionFragment.setArguments(args);
+			Bundle args = new Bundle();
+			// Add arguments
+			mConnectionFragment.setArguments(args);
+		}
 
 		showFragment(mConnectionFragment, "connection", false);
 	}
 
 	public void showSubscribeFragment() {
-		if (mSubscribeFragment == null)
+		if (mSubscribeFragment == null) {
 			mSubscribeFragment = new SubscribeFragment();
 
-		Bundle args = new Bundle();
-		// Add arguments
-		mSubscribeFragment.setArguments(args);
+			Bundle args = new Bundle();
+			// Add arguments
+			mSubscribeFragment.setArguments(args);
+		}
 
 		showFragment(mSubscribeFragment, "subscribe");
 	}
 
 	public void showPublishFragment() {
-		if (mPublishFragment == null)
+		if (mPublishFragment == null) {
 			mPublishFragment = new PublishFragment();
 
-		Bundle args = new Bundle();
-		// Add arguments
-		mPublishFragment.setArguments(args);
+			Bundle args = new Bundle();
+			// Add arguments
+			mPublishFragment.setArguments(args);
+		}
 
 		showFragment(mPublishFragment, "subscribe");
 	}
@@ -80,11 +82,11 @@ public class Controller {
 		if (backstack)
 			mFragmentManager.beginTransaction()
 					.replace(R.id.container, frag, tag).addToBackStack(tag)
-					.commit();
+					.commitAllowingStateLoss();
 		else
 			mFragmentManager.beginTransaction()
-					.replace(R.id.container, frag, tag).commit();
-
+					.replace(R.id.container, frag, tag)
+					.commitAllowingStateLoss();
 	}
 
 	public void appendMessage(String text) {
