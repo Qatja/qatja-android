@@ -90,10 +90,12 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 
 	private int port = 1883;
 
+	private String protocolName = null; // For some reason used in interop test suites... only reason it's included here.
+	
 	/** Unique identifier for this client */
 	private String clientIdentifier;
 
-	private boolean clean_session = true;
+	private boolean cleanSession = true;
 
 	private ConcurrentHashMap<Integer, MQTTMessage> sentPackages = new ConcurrentHashMap<Integer, MQTTMessage>();
 	private ConcurrentHashMap<Integer, MQTTMessage> receivedPackages = new ConcurrentHashMap<Integer, MQTTMessage>();
@@ -193,6 +195,12 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 	 */
 	private void connect(String clientIdentifier) {
 		MQTTConnect connect = new MQTTConnect(clientIdentifier);
+		
+		connect.setCleanSession(cleanSession);
+		
+		if(protocolName != null )
+			connect.setProtocolName(protocolName);
+			
 		sendMessage(connect, false);
 	}
 
@@ -220,6 +228,10 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 		publish(topic, payload, AT_MOST_ONCE);
 	}
 
+	public void publish(String topic, String message, byte qos) {
+		publish(topic, message.getBytes(), qos);
+	}
+
 	/**
 	 * Publish a message (byte[]) to a specified topic.
 	 * 
@@ -232,6 +244,12 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 	 */
 	public void publish(String topic, byte[] payload, byte qos) {
 		MQTTPublish publish = new MQTTPublish(topic, payload, qos);
+		sendMessage(publish);
+	}
+
+	public void publishRetain(String topic, byte[] payload, byte qos) {
+		MQTTPublish publish = new MQTTPublish(topic, payload, qos);
+		publish.setRetain(true);
 		sendMessage(publish);
 	}
 
@@ -291,27 +309,27 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 		sendMessage(subscribe);
 	}
 
-//	public synchronized void start() {
-//		if (DEBUG)
-//			Log.d(TAG, "start");
-//
-//		// Cancel any thread attempting to make a connection
-//		if (mConnectThread != null) {
-//			mConnectThread.cancel();
-//			mConnectThread = null;
-//		}
-//
-//		// Cancel any thread currently running a connection
-//		if (mConnectedThread != null) {
-//			mConnectedThread.cancel();
-//			mConnectedThread = null;
-//		}
-//
-//		setState(STATE_NONE);
-//
-//		// if (host != null)
-//		// connect(host, port);
-//	}
+	// public synchronized void start() {
+	// if (DEBUG)
+	// Log.d(TAG, "start");
+	//
+	// // Cancel any thread attempting to make a connection
+	// if (mConnectThread != null) {
+	// mConnectThread.cancel();
+	// mConnectThread = null;
+	// }
+	//
+	// // Cancel any thread currently running a connection
+	// if (mConnectedThread != null) {
+	// mConnectedThread.cancel();
+	// mConnectedThread = null;
+	// }
+	//
+	// setState(STATE_NONE);
+	//
+	// // if (host != null)
+	// // connect(host, port);
+	// }
 
 	private synchronized void sendMessage(MQTTMessage msg) {
 		sendMessage(msg, true);
@@ -382,6 +400,10 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 	public void setId(String clientIdentifier) {
 		this.clientIdentifier = clientIdentifier;
 	}
+	
+	public void setProtocolName(String protocolName){
+		this.protocolName = protocolName;
+	}
 
 	/**
 	 * Set clean session
@@ -389,7 +411,7 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 	 * @param clean_session
 	 */
 	public void setCleanSession(boolean clean_session) {
-		this.clean_session = clean_session;
+		this.cleanSession = clean_session;
 	}
 
 	/**
@@ -452,6 +474,42 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 		setState(STATE_CONNECTING);
 	}
 
+	public synchronized void connect(boolean newSocket) {
+		if (DEBUG)
+			Log.d(TAG, "connect to: " + host);
+		if (newSocket) {
+			// Cancel any thread currently running a ping check
+			if (mKeepaliveThread != null) {
+				mKeepaliveThread.cancel();
+				mKeepaliveThread = null;
+			}
+
+			// Cancel any thread attempting to make a connection
+			if (getState() == STATE_CONNECTING) {
+				if (mConnectThread != null) {
+					mConnectThread.cancel();
+					mConnectThread = null;
+				}
+			}
+
+			// Cancel any thread currently running a connection
+			if (mConnectedThread != null) {
+				mConnectedThread.cancel();
+				mConnectedThread = null;
+			}
+
+			// Start the thread to connect with the given device
+			mConnectThread = new ConnectThread(host, port);
+			mConnectThread.start();
+			
+			setState(STATE_CONNECTING);
+		}else{
+			setState(STATE_CONNECTING);
+			
+			connect(clientIdentifier);
+		}
+	}
+
 	/**
 	 * Service connected
 	 * 
@@ -487,6 +545,8 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 		// Start the ping check thread
 		mKeepaliveThread = new KeepaliveThread();
 		mKeepaliveThread.start();
+
+		Log.d(TAG, "Sending connect message");
 
 		// Send the connect message
 		connect(clientIdentifier);
@@ -552,12 +612,14 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 	private synchronized void setState(int state) {
 		if (DEBUG)
 			Log.d(TAG, "setState() " + mState + " -> " + state);
-
-		mState = state;
-
-		if (mHandler != null)
-			// Give the new state to the Handler so the UI Activity can update
-			mHandler.obtainMessage(STATE_CHANGE, state, -1).sendToTarget();
+		
+		if( mState != state ){
+			mState = state;		
+			
+			if (mHandler != null)
+				// Give the new state to the Handler so the UI Activity can update
+				mHandler.obtainMessage(STATE_CHANGE, state, -1).sendToTarget();
+		}
 	}
 
 	/**
@@ -679,6 +741,8 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 				Log.d(TAG, "Success unsubscribing to " + topicFilters[i]);
 			}
 		}
+		
+		mHandler.obtainMessage(msg.getType(), -1, -1, msg).sendToTarget();
 	}
 
 	private class KeepaliveThread extends Thread {
@@ -703,8 +767,8 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 				if (local_state != mState) {
 					local_state = mState;
 
-					if (DEBUG)
-						Log.d(TAG, "Detected change in volatile var: state");
+//					if (DEBUG)
+//						Log.d(TAG, "Detected change in volatile var: state");
 				}
 
 				if (local_state == STATE_CONNECTED) {
@@ -713,18 +777,18 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 						// pingreq
 						local_pingreqSent = pingreqSent;
 
-						if (DEBUG)
-							Log.d(TAG,
-									"Detected change in volatile var: pingreq");
+//						if (DEBUG)
+//							Log.d(TAG,
+//									"Detected change in volatile var: pingreq");
 					}
 
 					if (local_lastAction != lastAction) {
 						// TODO React to when a new action is set
 						local_lastAction = lastAction;
 
-						if (DEBUG)
-							Log.d(TAG,
-									"Detected change in volatile var: lastaction");
+//						if (DEBUG)
+//							Log.d(TAG,
+//									"Detected change in volatile var: lastaction");
 					}
 
 					if (local_pingreqSent) {
@@ -735,9 +799,9 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 						if ((System.currentTimeMillis() - local_lastAction) > (KEEP_ALIVE_TIMER + KEEP_ALIVE_TIMER / 2)) {
 							// Disconnect?
 							// TODO Disconnect
-							if (DEBUG)
-								Log.d(TAG,
-										"Ping time out detected, should disconnect?");
+//							if (DEBUG)
+//								Log.d(TAG,
+//										"Ping time out detected, should disconnect?");
 							pingreqSent = false;
 						}
 					} else {
@@ -749,8 +813,8 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 						}
 					}
 
-//					if (local_state != mState)
-//						local_state = mState;
+					// if (local_state != mState)
+					// local_state = mState;
 
 				} else {
 					// if (DEBUG)
@@ -1053,8 +1117,6 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 		 *            The bytes to write
 		 */
 		public synchronized void write(byte[] buffer) {
-			Log.d(TAG, "write()");
-			Log.d(TAG, new String(buffer));
 			try {
 				mmOutStream.write(buffer);
 			} catch (IOException e) {
