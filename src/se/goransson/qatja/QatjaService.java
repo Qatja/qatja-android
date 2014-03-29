@@ -90,12 +90,18 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 
 	private int port = 1883;
 
-	private String protocolName = null; // For some reason used in interop test suites... only reason it's included here.
-	
+	private String protocolName = null; // For some reason used in interop test
+										// suites... only reason it's included
+										// here.
+
 	/** Unique identifier for this client */
 	private String clientIdentifier;
 
 	private boolean cleanSession = true;
+
+	private boolean willFlag;
+	private String willTopic;
+	private String willMessage;
 
 	private ConcurrentHashMap<Integer, MQTTMessage> sentPackages = new ConcurrentHashMap<Integer, MQTTMessage>();
 	private ConcurrentHashMap<Integer, MQTTMessage> receivedPackages = new ConcurrentHashMap<Integer, MQTTMessage>();
@@ -195,12 +201,18 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 	 */
 	private void connect(String clientIdentifier) {
 		MQTTConnect connect = new MQTTConnect(clientIdentifier);
-		
+
 		connect.setCleanSession(cleanSession);
+
+		connect.setWillFlag(willFlag);
+		if (willFlag) {
+			connect.setWillTopic(willTopic);
+			connect.setWillMessage(willMessage);
+		}
 		
-		if(protocolName != null )
+		if (protocolName != null)
 			connect.setProtocolName(protocolName);
-			
+
 		sendMessage(connect, false);
 	}
 
@@ -236,17 +248,41 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 	 * Publish a message (byte[]) to a specified topic.
 	 * 
 	 * @param topic
-	 *            Topic to publish to
-	 * @param message
-	 *            Message to publish
-	 * @param retain
-	 *            Should the message be retained on server? True or false
+	 *            the topic
+	 * @param payload
+	 *            the message
+	 * @param qos
+	 *            the desired quality of service
 	 */
 	public void publish(String topic, byte[] payload, byte qos) {
 		MQTTPublish publish = new MQTTPublish(topic, payload, qos);
 		sendMessage(publish);
 	}
 
+	/**
+	 * Publish a retained message to a specified topic.
+	 * 
+	 * @param topic
+	 *            the topic
+	 * @param message
+	 *            the message
+	 * @param qos
+	 *            the desired quality of service
+	 */
+	public void publishRetain(String topic, String message, byte qos) {
+		publishRetain(topic, message.getBytes(), qos);
+	}
+
+	/**
+	 * Publish a retained message to a specified topic.
+	 * 
+	 * @param topic
+	 *            the topic
+	 * @param payload
+	 *            the message to publish
+	 * @param qos
+	 *            the desired quality of service
+	 */
 	public void publishRetain(String topic, byte[] payload, byte qos) {
 		MQTTPublish publish = new MQTTPublish(topic, payload, qos);
 		publish.setRetain(true);
@@ -400,8 +436,8 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 	public void setId(String clientIdentifier) {
 		this.clientIdentifier = clientIdentifier;
 	}
-	
-	public void setProtocolName(String protocolName){
+
+	public void setProtocolName(String protocolName) {
 		this.protocolName = protocolName;
 	}
 
@@ -412,6 +448,24 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 	 */
 	public void setCleanSession(boolean clean_session) {
 		this.cleanSession = clean_session;
+	}
+
+	/**
+	 * Set will
+	 * 
+	 * @param topic
+	 *            the will topic
+	 * @param message
+	 *            the will message
+	 */
+	public void setWill(String topic, String message) {
+		if (topic == null || message == null) {
+			willFlag = false;
+		} else {
+			willTopic = topic;
+			willMessage = message;
+			willFlag = true;
+		}
 	}
 
 	/**
@@ -501,11 +555,11 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 			// Start the thread to connect with the given device
 			mConnectThread = new ConnectThread(host, port);
 			mConnectThread.start();
-			
+
 			setState(STATE_CONNECTING);
-		}else{
+		} else {
 			setState(STATE_CONNECTING);
-			
+
 			connect(clientIdentifier);
 		}
 	}
@@ -612,12 +666,13 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 	private synchronized void setState(int state) {
 		if (DEBUG)
 			Log.d(TAG, "setState() " + mState + " -> " + state);
-		
-		if( mState != state ){
-			mState = state;		
-			
+
+		if (mState != state) {
+			mState = state;
+
 			if (mHandler != null)
-				// Give the new state to the Handler so the UI Activity can update
+				// Give the new state to the Handler so the UI Activity can
+				// update
 				mHandler.obtainMessage(STATE_CHANGE, state, -1).sendToTarget();
 		}
 	}
@@ -741,7 +796,7 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 				Log.d(TAG, "Success unsubscribing to " + topicFilters[i]);
 			}
 		}
-		
+
 		mHandler.obtainMessage(msg.getType(), -1, -1, msg).sendToTarget();
 	}
 
@@ -767,8 +822,8 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 				if (local_state != mState) {
 					local_state = mState;
 
-//					if (DEBUG)
-//						Log.d(TAG, "Detected change in volatile var: state");
+					// if (DEBUG)
+					// Log.d(TAG, "Detected change in volatile var: state");
 				}
 
 				if (local_state == STATE_CONNECTED) {
@@ -777,18 +832,18 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 						// pingreq
 						local_pingreqSent = pingreqSent;
 
-//						if (DEBUG)
-//							Log.d(TAG,
-//									"Detected change in volatile var: pingreq");
+						// if (DEBUG)
+						// Log.d(TAG,
+						// "Detected change in volatile var: pingreq");
 					}
 
 					if (local_lastAction != lastAction) {
 						// TODO React to when a new action is set
 						local_lastAction = lastAction;
 
-//						if (DEBUG)
-//							Log.d(TAG,
-//									"Detected change in volatile var: lastaction");
+						// if (DEBUG)
+						// Log.d(TAG,
+						// "Detected change in volatile var: lastaction");
 					}
 
 					if (local_pingreqSent) {
@@ -799,9 +854,9 @@ public class QatjaService extends Service implements MQTTConnectionConstants,
 						if ((System.currentTimeMillis() - local_lastAction) > (KEEP_ALIVE_TIMER + KEEP_ALIVE_TIMER / 2)) {
 							// Disconnect?
 							// TODO Disconnect
-//							if (DEBUG)
-//								Log.d(TAG,
-//										"Ping time out detected, should disconnect?");
+							// if (DEBUG)
+							// Log.d(TAG,
+							// "Ping time out detected, should disconnect?");
 							pingreqSent = false;
 						}
 					} else {
