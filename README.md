@@ -1,6 +1,8 @@
 Qatja Android library
 ==========
 
+**This is the old Eclipse project repo**
+
 This library creates a new service called QatjaService.java which allows for a easy connection to any MQTT server running standard version 3.1.1
 
 ## Installation (Eclipse only)
