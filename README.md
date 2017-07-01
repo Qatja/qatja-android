@@ -3,26 +3,53 @@ Qatja Android library
 
 This library creates a new service called QatjaService.java which allows for a easy connection to any MQTT server running standard version 3.1.1
 
-## Installation (Eclipse only)
+## Installation
 
-1. Clone library `git clone https://github.com/Qatja/android.git`
-2. Add the qatja-android Eclipse project to your workspace
-3. Make sure you have correct Android SDK installed (you can change this SDK version to one that suits your project also)
+This library is not fully available from JCenter yet, but will be in future. Until then, follow these steps to use this library in your Android project.
 
-## Create MQTT enabled Android project
+1. Add the bintray maven repository to your project level `build.gradle`
 
-1. Create new Android application
-`File > New > Other > Android project`
+```
+[...]
 
-2. Add the mqtt4android library to your project
-Open the dialog `File > Properties > Android` and then click `Add...` and select the mqtt4android library.
+allprojects {
+    repositories {
+        jcenter()
 
-3. Add the MQTTService service to your manifest
-```xml
-<service android:name="se.goransson.qatja.QatjaService" ></service> 
+        maven {
+            url 'https://dl.bintray.com/wetcat/Qatja/'
+        }
+    }
+}
+
+[...]
 ```
 
-4. The library uses a Handler to communicate to your UI for safety reasons, create a handler that listens for MQTT state and messages.
+2. Add the dependency to your app level `build.gradle`
+
+```
+[...]
+
+dependencies {
+    [...]
+    
+    compile 'se.wetcat.qatja:qatja-android:0.1.2'
+}
+
+[...]
+```
+
+## Enabling MQTT in your project
+
+1. Add the MQTT service to your manifest
+
+```xml
+<service
+    android:name="se.wetcat.qatja.android.QatjaService"
+    android:exported="false"/>
+```
+
+2. The library uses a Handler to communicate to your UI for safety reasons, create a handler that listens for MQTT state and messages.
 ```java
 Handler mHandler = new Handler(new MQTTCallback());
 
