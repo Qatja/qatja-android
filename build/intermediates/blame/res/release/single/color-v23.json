@@ -1,0 +1,42 @@
+[
+    {
+        "merged": "/Users/ksango/projects/QatjaApp/android/build/intermediates/res/merged/release/color-v23/abc_tint_spinner.xml",
+        "source": "/Users/ksango/.android/build-cache/7fda019f6a4e64c5ddffcd428b703c5e0bcf806a/output/res/color-v23/abc_tint_spinner.xml"
+    },
+    {
+        "merged": "/Users/ksango/projects/QatjaApp/android/build/intermediates/res/merged/release/color-v23/abc_tint_switch_track.xml",
+        "source": "/Users/ksango/.android/build-cache/7fda019f6a4e64c5ddffcd428b703c5e0bcf806a/output/res/color-v23/abc_tint_switch_track.xml"
+    },
+    {
+        "merged": "/Users/ksango/projects/QatjaApp/android/build/intermediates/res/merged/release/color-v23/abc_tint_switch_thumb.xml",
+        "source": "/Users/ksango/.android/build-cache/7fda019f6a4e64c5ddffcd428b703c5e0bcf806a/output/res/color-v23/abc_tint_switch_thumb.xml"
+    },
+    {
+        "merged": "/Users/ksango/projects/QatjaApp/android/build/intermediates/res/merged/release/color-v23/abc_tint_seek_thumb.xml",
+        "source": "/Users/ksango/.android/build-cache/7fda019f6a4e64c5ddffcd428b703c5e0bcf806a/output/res/color-v23/abc_tint_seek_thumb.xml"
+    },
+    {
+        "merged": "/Users/ksango/projects/QatjaApp/android/build/intermediates/res/merged/release/color-v23/abc_tint_btn_checkable.xml",
+        "source": "/Users/ksango/.android/build-cache/7fda019f6a4e64c5ddffcd428b703c5e0bcf806a/output/res/color-v23/abc_tint_btn_checkable.xml"
+    },
+    {
+        "merged": "/Users/ksango/projects/QatjaApp/android/build/intermediates/res/merged/release/color-v23/abc_btn_colored_borderless_text_material.xml",
+        "source": "/Users/ksango/.android/build-cache/7fda019f6a4e64c5ddffcd428b703c5e0bcf806a/output/res/color-v23/abc_btn_colored_borderless_text_material.xml"
+    },
+    {
+        "merged": "/Users/ksango/projects/QatjaApp/android/build/intermediates/res/merged/release/color-v23/abc_tint_edittext.xml",
+        "source": "/Users/ksango/.android/build-cache/7fda019f6a4e64c5ddffcd428b703c5e0bcf806a/output/res/color-v23/abc_tint_edittext.xml"
+    },
+    {
+        "merged": "/Users/ksango/projects/QatjaApp/android/build/intermediates/res/merged/release/color-v23/abc_btn_colored_text_material.xml",
+        "source": "/Users/ksango/.android/build-cache/7fda019f6a4e64c5ddffcd428b703c5e0bcf806a/output/res/color-v23/abc_btn_colored_text_material.xml"
+    },
+    {
+        "merged": "/Users/ksango/projects/QatjaApp/android/build/intermediates/res/merged/release/color-v23/abc_color_highlight_material.xml",
+        "source": "/Users/ksango/.android/build-cache/7fda019f6a4e64c5ddffcd428b703c5e0bcf806a/output/res/color-v23/abc_color_highlight_material.xml"
+    },
+    {
+        "merged": "/Users/ksango/projects/QatjaApp/android/build/intermediates/res/merged/release/color-v23/abc_tint_default.xml",
+        "source": "/Users/ksango/.android/build-cache/7fda019f6a4e64c5ddffcd428b703c5e0bcf806a/output/res/color-v23/abc_tint_default.xml"
+    }
+]

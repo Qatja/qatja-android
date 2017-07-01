@@ -1,0 +1,18 @@
+[
+    {
+        "merged": "/Users/ksango/projects/QatjaApp/android/build/intermediates/res/merged/release/drawable-v21/notification_action_background.xml",
+        "source": "/Users/ksango/.android/build-cache/7fda019f6a4e64c5ddffcd428b703c5e0bcf806a/output/res/drawable-v21/notification_action_background.xml"
+    },
+    {
+        "merged": "/Users/ksango/projects/QatjaApp/android/build/intermediates/res/merged/release/drawable-v21/abc_action_bar_item_background_material.xml",
+        "source": "/Users/ksango/.android/build-cache/7fda019f6a4e64c5ddffcd428b703c5e0bcf806a/output/res/drawable-v21/abc_action_bar_item_background_material.xml"
+    },
+    {
+        "merged": "/Users/ksango/projects/QatjaApp/android/build/intermediates/res/merged/release/drawable-v21/abc_btn_colored_material.xml",
+        "source": "/Users/ksango/.android/build-cache/7fda019f6a4e64c5ddffcd428b703c5e0bcf806a/output/res/drawable-v21/abc_btn_colored_material.xml"
+    },
+    {
+        "merged": "/Users/ksango/projects/QatjaApp/android/build/intermediates/res/merged/release/drawable-v21/abc_edit_text_material.xml",
+        "source": "/Users/ksango/.android/build-cache/7fda019f6a4e64c5ddffcd428b703c5e0bcf806a/output/res/drawable-v21/abc_edit_text_material.xml"
+    }
+]
