@@ -1,0 +1,3 @@
+rootProject.name = 'qatja-android-root'
+
+include ':qatja-android'
