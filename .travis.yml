@@ -9,6 +9,9 @@ env:
 before_install:
   - ./travis_prebuild.sh;
 
+script:
+    - ./gradlew build check
+
 android:
   components:
     - tools
