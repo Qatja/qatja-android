@@ -22,6 +22,11 @@ android:
     # if you need to run emulator(s) during your tests
     - sys-img-armeabi-v7a-android-25
 
+  licenses:
+    - 'android-sdk-preview-license-+'
+    - 'android-sdk-license-.+'
+    - 'google-gdk-license-.+'
+
 deploy:
   provider: script
   script: gradle core/publish-settings.gradle clean bintrayUpload
