@@ -10,7 +10,7 @@ before_install:
   - ./travis_prebuild.sh;
 
 android:
- components:
+  components:
     - tools
     - platform-tools
     # The BuildTools version used by your project
