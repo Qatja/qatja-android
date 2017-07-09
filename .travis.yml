@@ -33,7 +33,7 @@ android:
 
 deploy:
   provider: script
-  script: gradle core/publish-settings.gradle clean bintrayUpload
+  script: ./gradlew -c qatja-android/publish-settings.gradle clean bintrayUpload
   skip_cleanup: true
   on:
     tags: true
