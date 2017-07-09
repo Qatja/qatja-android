@@ -1,7 +1,5 @@
 language: android
 
-jdk: oraclejdk8
-
 before_install:
   - ./travis_prebuild.sh;
 
@@ -9,8 +7,8 @@ android:
   components:
     # Uncomment the lines below if you want to
     # use the latest revision of Android SDK Tools
-    # - tools
-    # - platform-tools
+    - tools
+    - platform-tools
 
     # The BuildTools version used by your project
     - build-tools-25.0.2
@@ -22,10 +20,7 @@ android:
     # if you need to run emulator(s) during your tests
     - sys-img-armeabi-v7a-android-25
 
-  licenses:
-    - 'android-sdk-preview-license-+'
-    - 'android-sdk-license-.+'
-    - 'google-gdk-license-.+'
+jdk: oraclejdk8
 
 deploy:
   provider: script
