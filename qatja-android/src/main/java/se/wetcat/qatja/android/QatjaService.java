@@ -47,11 +47,11 @@ import se.wetcat.qatja.messages.MQTTSubscribe;
 import se.wetcat.qatja.messages.MQTTUnsuback;
 import se.wetcat.qatja.messages.MQTTUnsubscribe;
 
-import static se.wetcat.qatja.MQTTConnectionConstants.STATE_CHANGE;
-import static se.wetcat.qatja.MQTTConnectionConstants.STATE_CONNECTED;
-import static se.wetcat.qatja.MQTTConnectionConstants.STATE_CONNECTING;
-import static se.wetcat.qatja.MQTTConnectionConstants.STATE_CONNECTION_FAILED;
-import static se.wetcat.qatja.MQTTConnectionConstants.STATE_NONE;
+import static se.wetcat.qatja.android.MQTTConnectionConstants.STATE_CHANGE;
+import static se.wetcat.qatja.android.MQTTConnectionConstants.STATE_CONNECTED;
+import static se.wetcat.qatja.android.MQTTConnectionConstants.STATE_CONNECTING;
+import static se.wetcat.qatja.android.MQTTConnectionConstants.STATE_CONNECTION_FAILED;
+import static se.wetcat.qatja.android.MQTTConnectionConstants.STATE_NONE;
 import static se.wetcat.qatja.MQTTConstants.AT_LEAST_ONCE;
 import static se.wetcat.qatja.MQTTConstants.AT_MOST_ONCE;
 import static se.wetcat.qatja.MQTTConstants.CONNACK;
@@ -117,16 +117,19 @@ public class QatjaService extends Service {
   private ConnectedThread mConnectedThread;
 
   /**
-   * Thread to handle ping requests and responses
-   */
-  private KeepaliveThread mKeepaliveThread;
-
-  /**
    * Keepalive timer
    */
   private int KEEP_ALIVE_TIMER = 3000;
 
-  /** */
+  /**
+   * Handler used to queue PINGRESP messages, will be automatically queued when sending a message,
+   * or when connecting.
+   */
+  private Handler mKeepaliveHandler;
+
+  /**
+   *
+   */
   private Handler mHandler = null;
 
   /**
@@ -141,9 +144,10 @@ public class QatjaService extends Service {
 
   private int port = 1883;
 
-  private String protocolName = null; // For some reason used in interop test
-  // suites... only reason it's included
-  // here.
+  /*
+    For some reason used in interop test suites... only reason it's included here.
+   */
+  private String protocolName = null;
 
   /**
    * Unique identifier for this client
@@ -157,9 +161,8 @@ public class QatjaService extends Service {
   private String willMessage;
 
   // PING VARIABLES
-  private volatile boolean pingreqSent = false;
-  private volatile long pingTime = 0;
-  private volatile long lastAction = 0;
+  private volatile long lastPingResp = 0L;
+  private volatile long lastSentMessage = 0L;
 
   private MQTTIdentifierHelper mMqttIdentifierHelper;
 
@@ -223,10 +226,9 @@ public class QatjaService extends Service {
       mConnectedThread = null;
     }
 
-    // Cancel any thread currently running a ping check
-    if (mKeepaliveThread != null) {
-      mKeepaliveThread.cancel();
-      mKeepaliveThread = null;
+    if (mKeepaliveHandler != null) {
+      mKeepaliveHandler.removeCallbacks(mPingSender);
+      mKeepaliveHandler = null;
     }
 
     if (DEBUG)
@@ -557,16 +559,30 @@ public class QatjaService extends Service {
   }
 
   /**
+   * This runnable will take care of sending a ping request, it will be automatically cancelled and
+   * rescheduled if another message was sent to the broker (as defined in MQTT spec 3.1.1 we're not
+   * required to send ping as long as another message has been sent within the specified period.
+   */
+  private Runnable mPingSender = new Runnable() {
+    @Override
+    public void run() {
+      sendMessage(MQTTPingreq.newInstance());
+
+      // Make sure to auto-queue the runnable again when the message has been sent.
+      mKeepaliveHandler.postDelayed(mPingSender, KEEP_ALIVE_TIMER);
+    }
+  };
+
+  /**
    * Start a connection attempt
    */
   public synchronized void connect() {
     if (DEBUG)
       Log.d(TAG, "connect to: " + host);
 
-    // Cancel any thread currently running a ping check
-    if (mKeepaliveThread != null) {
-      mKeepaliveThread.cancel();
-      mKeepaliveThread = null;
+    if (mKeepaliveHandler != null) {
+      mKeepaliveHandler.removeCallbacks(mPingSender);
+      mKeepaliveHandler = null;
     }
 
     // Cancel any thread attempting to make a connection
@@ -594,10 +610,10 @@ public class QatjaService extends Service {
     if (DEBUG)
       Log.d(TAG, "connect to: " + host);
     if (newSocket) {
-      // Cancel any thread currently running a ping check
-      if (mKeepaliveThread != null) {
-        mKeepaliveThread.cancel();
-        mKeepaliveThread = null;
+      // Cancel any future ping requests
+      if (mKeepaliveHandler != null) {
+        mKeepaliveHandler.removeCallbacks(mPingSender);
+        mKeepaliveHandler = null;
       }
 
       // Cancel any thread attempting to make a connection
@@ -635,10 +651,10 @@ public class QatjaService extends Service {
     if (DEBUG)
       Log.d(TAG, "connected, Socket Type:");
 
-    // Cancel any thread currently running a ping check
-    if (mKeepaliveThread != null) {
-      mKeepaliveThread.cancel();
-      mKeepaliveThread = null;
+    // Cancel any future ping requests
+    if (mKeepaliveHandler != null) {
+      mKeepaliveHandler.removeCallbacks(mPingSender);
+      mKeepaliveHandler = null;
     }
 
     // Cancel the thread that completed the connection
@@ -657,9 +673,9 @@ public class QatjaService extends Service {
     mConnectedThread = new ConnectedThread(socket);
     mConnectedThread.start();
 
-    // Start the ping check thread
-    mKeepaliveThread = new KeepaliveThread();
-    mKeepaliveThread.start();
+    // Start the PINGREQ handler
+    mKeepaliveHandler = new Handler(getMainLooper());
+    mKeepaliveHandler.postDelayed(mPingSender, KEEP_ALIVE_TIMER);
 
     Log.d(TAG, "Sending connect message");
 
@@ -697,10 +713,10 @@ public class QatjaService extends Service {
    * Disconnect the MQTT service
    */
   public void disconnect() {
-    // Cancel any thread currently running a ping check
-    if (mKeepaliveThread != null) {
-      mKeepaliveThread.cancel();
-      mKeepaliveThread = null;
+    // Cancel any future ping requests
+    if (mKeepaliveHandler != null) {
+      mKeepaliveHandler.removeCallbacks(mPingSender);
+      mKeepaliveHandler = null;
     }
 
     // Cancel the thread that completed the connection
@@ -818,100 +834,6 @@ public class QatjaService extends Service {
     mHandler.obtainMessage(msg.getType(), -1, -1, msg).sendToTarget();
   }
 
-  private class KeepaliveThread extends Thread {
-
-    public KeepaliveThread() {
-      if (DEBUG)
-        Log.d(TAG, "CREATE mPingthread ");
-    }
-
-    @Override
-    public void run() {
-      if (DEBUG)
-        Log.d(TAG, "BEGIN mPingthread");
-
-      boolean local_pingreqSent = pingreqSent;
-      long local_pingTime = pingTime;
-      long local_lastAction = lastAction;
-
-      int local_state = mState;
-
-      while (!interrupted()) {
-        if (local_state != mState) {
-          local_state = mState;
-
-          // if (DEBUG)
-          // Log.d(TAG, "Detected change in volatile var: state");
-        }
-
-        if (local_state == STATE_CONNECTED) {
-          if (local_pingreqSent != pingreqSent) {
-            // TODO React to when the listener thread changed the
-            // pingreq
-            local_pingreqSent = pingreqSent;
-
-            // if (DEBUG)
-            // Log.d(TAG,
-            // "Detected change in volatile var: pingreq");
-          }
-
-          if (local_lastAction != lastAction) {
-            // TODO React to when a new action is set
-            local_lastAction = lastAction;
-
-            // if (DEBUG)
-            // Log.d(TAG,
-            // "Detected change in volatile var: lastaction");
-          }
-
-          if (local_pingreqSent) {
-            // If we're expecting a ping response; detect if we've
-            // timed out.
-            // if ((System.currentTimeMillis() - local_lastAction) >
-            // (KEEP_ALIVE_TIMER + KEEP_ALIVE_GRACE)) {
-            if ((System.currentTimeMillis() - local_lastAction) > (KEEP_ALIVE_TIMER + KEEP_ALIVE_TIMER / 2)) {
-              // Disconnect?
-              // TODO Disconnect
-              // if (DEBUG)
-              // Log.d(TAG,
-              // "Ping time out detected, should disconnect?");
-              pingreqSent = false;
-            }
-          } else {
-            // If the last action was too long ago; send a ping
-            if ((System.currentTimeMillis() - local_lastAction) > KEEP_ALIVE_TIMER) {
-              MQTTPingreq pingreq = MQTTPingreq.newInstance();
-              sendMessage(pingreq);
-              pingreqSent = true;
-            }
-          }
-
-          // if (local_state != mState)
-          // local_state = mState;
-
-        } else {
-          // if (DEBUG)
-          // Log.d(TAG, "Not connected??");
-          Thread.currentThread().interrupt();
-        }
-
-        if (!interrupted()) {
-          try {
-            Thread.sleep(500);
-          } catch (InterruptedException e) {
-            e.printStackTrace();
-          }
-        }
-
-      }
-    }
-
-    public void cancel() {
-      // TODO do we need to do something?
-    }
-
-  }
-
   private class ConnectThread extends Thread {
     private static final String TAG = "ConnectThread";
 
@@ -943,8 +865,7 @@ public class QatjaService extends Service {
 
       // Make a connection to the Socket
       try {
-        // This is a blocking call and will only return on a
-        // successful connection or an exception
+        // This is a blocking call and will only return on a successful connection or an exception
         mmSocket.connect(remoteAddr, timeout);
       } catch (IOException e) {
         // Close the socket
@@ -960,7 +881,7 @@ public class QatjaService extends Service {
       }
 
       // Reset the ConnectThread because we're done
-      synchronized (QatjaService.this) {
+      synchronized (this) {
         mConnectThread = null;
       }
 
@@ -978,8 +899,8 @@ public class QatjaService extends Service {
   }
 
   /**
-   * This thread runs during a connection with a remote device. It handles all
-   * incoming and outgoing transmissions.
+   * This thread runs during a connection with a remote device. It handles all incoming and outgoing
+   * transmissions.
    */
   private class ConnectedThread extends Thread {
     private final Socket mmSocket;
@@ -1148,13 +1069,12 @@ public class QatjaService extends Service {
 
                 case PINGREQ:
                   // Client doesn't receive this message
-                  pingTime = System.currentTimeMillis();
                   break;
 
                 case PINGRESP:
-                  pingreqSent = false;
-
+                  lastPingResp = System.currentTimeMillis();
                   break;
+
                 case DISCONNECT:
                   // Client doesn't receive this message
                   break;
@@ -1225,7 +1145,11 @@ public class QatjaService extends Service {
       super.onPostExecute(sent);
 
       if (sent != null) {
-        lastAction = System.currentTimeMillis();
+        lastSentMessage = System.currentTimeMillis();
+
+        mKeepaliveHandler.removeCallbacks(mPingSender);
+
+        mKeepaliveHandler.postDelayed(mPingSender, KEEP_ALIVE_TIMER);
       }
     }
   }
