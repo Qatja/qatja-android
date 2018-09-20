@@ -199,7 +199,7 @@ public class QatjaService extends Service {
     if (DEBUG)
       Log.d(TAG, "onCreate");
 
-    subscribedTopics = new HashSet();
+    subscribedTopics = new HashSet<>();
 
     mMqttIdentifierHelper = new MQTTIdentifierHelper();
   }
