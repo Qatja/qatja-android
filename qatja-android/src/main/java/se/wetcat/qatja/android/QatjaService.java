@@ -412,6 +412,10 @@ public class QatjaService extends Service {
       topics = newTopics.toArray(new String[0]);
     }
 
+    if(topics.length == 0) {
+      return;
+    }
+    
     int id = mMqttIdentifierHelper.getIdentifier();
 
     MQTTSubscribe subscribe = MQTTSubscribe.newInstance(topics, qoss, id);
