@@ -29,6 +29,8 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.util.Arrays;
+import java.util.HashSet;
 
 import se.wetcat.qatja.MQTTException;
 import se.wetcat.qatja.MQTTHelper;
@@ -159,6 +161,7 @@ public class QatjaService extends Service {
   private boolean willFlag;
   private String willTopic;
   private String willMessage;
+  private HashSet<String> subscribedTopics;
 
   // PING VARIABLES
   private volatile long lastPingResp = 0L;
@@ -196,6 +199,8 @@ public class QatjaService extends Service {
     if (DEBUG)
       Log.d(TAG, "onCreate");
 
+    subscribedTopics = new HashSet<>();
+
     mMqttIdentifierHelper = new MQTTIdentifierHelper();
   }
 
@@ -230,6 +235,8 @@ public class QatjaService extends Service {
       mKeepaliveHandler.removeCallbacks(mPingSender);
       mKeepaliveHandler = null;
     }
+
+    subscribedTopics = null;
 
     if (DEBUG)
       Log.d(TAG, "onDestroy");
@@ -395,10 +402,26 @@ public class QatjaService extends Service {
    *               {@link se.wetcat.qatja.MQTTConstants#EXACTLY_ONCE}.
    */
   public void subscribe(String[] topics, byte[] qoss) {
+
+    for(int i = 0; i < topics.length; i++) {
+      HashSet<String> newTopics = new HashSet<>();
+
+      if(!subscribedTopics.contains(topics[i])) {
+        newTopics.add(topics[i]);
+      }
+      topics = newTopics.toArray(new String[0]);
+    }
+
+    if(topics.length == 0) {
+      return;
+    }
+    
     int id = mMqttIdentifierHelper.getIdentifier();
 
     MQTTSubscribe subscribe = MQTTSubscribe.newInstance(topics, qoss, id);
     sendMessage(subscribe);
+
+    subscribedTopics.addAll(Arrays.asList(topics));
 
     mMqttIdentifierHelper.addSentPackage(subscribe);
   }
@@ -475,6 +498,13 @@ public class QatjaService extends Service {
 //        Log.e(TAG, "FAiled to send message " + MQTTHelper.decodePackageName(msg.getType()), e);
 //      }
 //    }
+  }
+
+  public String[] getSubscribedTopics() {
+    if(subscribedTopics == null) {
+      return new String[]{};
+    }
+    return subscribedTopics.toArray(new String[0]);
   }
 
   /**
@@ -599,6 +629,10 @@ public class QatjaService extends Service {
       mConnectedThread = null;
     }
 
+    if(subscribedTopics != null) {
+      subscribedTopics.clear();
+    }
+
     // Start the thread to connect with the given device
     mConnectThread = new ConnectThread(host, port);
     mConnectThread.start();
@@ -628,6 +662,10 @@ public class QatjaService extends Service {
       if (mConnectedThread != null) {
         mConnectedThread.cancel();
         mConnectedThread = null;
+      }
+
+      if(subscribedTopics != null) {
+        subscribedTopics.clear();
       }
 
       // Start the thread to connect with the given device
@@ -669,6 +707,10 @@ public class QatjaService extends Service {
       mConnectedThread = null;
     }
 
+    if(subscribedTopics != null) {
+      subscribedTopics.clear();
+    }
+
     // Start the thread to manage the connection and perform transmissions
     mConnectedThread = new ConnectedThread(socket);
     mConnectedThread.start();
@@ -692,6 +734,10 @@ public class QatjaService extends Service {
     if (DEBUG)
       Log.d(TAG, "connectionFailed", e);
 
+    if(subscribedTopics != null) {
+      subscribedTopics.clear();
+    }
+
     if (doAutomaticReconnect)
       reconnect();
 
@@ -704,6 +750,10 @@ public class QatjaService extends Service {
   private void connectionLost() {
     if (DEBUG)
       Log.d(TAG, "connectionLost");
+
+    if(subscribedTopics != null) {
+      subscribedTopics.clear();
+    }
 
     if (doAutomaticReconnect)
       reconnect();
@@ -729,6 +779,10 @@ public class QatjaService extends Service {
     if (mConnectedThread != null) {
       mConnectedThread.cancel();
       mConnectedThread = null;
+    }
+
+    if(subscribedTopics != null) {
+      subscribedTopics.clear();
     }
 
     setState(STATE_NONE);
