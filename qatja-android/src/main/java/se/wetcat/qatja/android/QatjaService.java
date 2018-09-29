@@ -32,6 +32,10 @@ import java.net.Socket;
 import java.util.Arrays;
 import java.util.HashSet;
 
+import javax.net.SocketFactory;
+import javax.net.ssl.SSLSocket;
+import javax.net.ssl.SSLSocketFactory;
+
 import se.wetcat.qatja.MQTTException;
 import se.wetcat.qatja.MQTTHelper;
 import se.wetcat.qatja.MQTTIdentifierHelper;
@@ -143,6 +147,11 @@ public class QatjaService extends Service {
    * The default is the localhost (emulator link to
    */
   private String host = "10.0.2.2";
+
+  /**
+   * The default is no SSL, turning this on before connect will enforce an SSL connection attempt.
+   */
+  private SSLSocketFactory socketFactory = null;
 
   private int port = 1883;
 
@@ -415,7 +424,7 @@ public class QatjaService extends Service {
     if(topics.length == 0) {
       return;
     }
-    
+
     int id = mMqttIdentifierHelper.getIdentifier();
 
     MQTTSubscribe subscribe = MQTTSubscribe.newInstance(topics, qoss, id);
@@ -505,6 +514,10 @@ public class QatjaService extends Service {
       return new String[]{};
     }
     return subscribedTopics.toArray(new String[0]);
+  }
+
+  public void setSSLSocketFactory(SSLSocketFactory socketFactory) {
+    this.socketFactory = socketFactory;
   }
 
   /**
@@ -634,10 +647,16 @@ public class QatjaService extends Service {
     }
 
     // Start the thread to connect with the given device
-    mConnectThread = new ConnectThread(host, port);
-    mConnectThread.start();
+    try {
+        mConnectThread = new ConnectThread(host, port);
+        mConnectThread.start();
 
-    setState(STATE_CONNECTING);
+        setState(STATE_CONNECTING);
+    } catch (Exception e) {
+        Log.e(TAG, e.getMessage(), e);
+
+        setState(STATE_CONNECTION_FAILED);
+    }
   }
 
   public synchronized void connect(boolean newSocket) {
@@ -669,10 +688,16 @@ public class QatjaService extends Service {
       }
 
       // Start the thread to connect with the given device
-      mConnectThread = new ConnectThread(host, port);
-      mConnectThread.start();
+      try {
+          mConnectThread = new ConnectThread(host, port);
+          mConnectThread.start();
 
-      setState(STATE_CONNECTING);
+          setState(STATE_CONNECTING);
+      } catch (Exception e) {
+          Log.e(TAG, e.getMessage(), e);
+
+          setState(STATE_CONNECTION_FAILED);
+      }
     } else {
       setState(STATE_CONNECTING);
 
@@ -900,13 +925,15 @@ public class QatjaService extends Service {
 
     private InetSocketAddress remoteAddr;
 
-    public ConnectThread(String host, int port) {
+    ConnectThread(String host, int port) throws IOException {
       if (DEBUG)
         Log.d(TAG, "CREATE mConnectThread ");
 
-      Socket tmp = new Socket();
-
-      mmSocket = tmp;
+      if (socketFactory != null) {
+          mmSocket = socketFactory.createSocket();
+      } else {
+          mmSocket = new Socket();
+      }
     }
 
     public void run() {
