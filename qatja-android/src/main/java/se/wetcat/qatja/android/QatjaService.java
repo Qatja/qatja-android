@@ -1236,9 +1236,12 @@ public class QatjaService extends Service {
       if (sent != null) {
         lastSentMessage = System.currentTimeMillis();
 
-        mKeepaliveHandler.removeCallbacks(mPingSender);
-
-        mKeepaliveHandler.postDelayed(mPingSender, KEEP_ALIVE_TIMER);
+        try {
+          mKeepaliveHandler.removeCallbacks(mPingSender);
+          mKeepaliveHandler.postDelayed(mPingSender, KEEP_ALIVE_TIMER);
+        } catch (Exception ex) {
+          Log.e(TAG, ex.getMessage(), ex);
+        }
       }
     }
   }
