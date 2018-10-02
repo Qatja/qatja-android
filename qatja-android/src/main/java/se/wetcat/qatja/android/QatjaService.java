@@ -32,8 +32,6 @@ import java.net.Socket;
 import java.util.Arrays;
 import java.util.HashSet;
 
-import javax.net.SocketFactory;
-import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
 
 import se.wetcat.qatja.MQTTException;
@@ -53,11 +51,6 @@ import se.wetcat.qatja.messages.MQTTSubscribe;
 import se.wetcat.qatja.messages.MQTTUnsuback;
 import se.wetcat.qatja.messages.MQTTUnsubscribe;
 
-import static se.wetcat.qatja.android.MQTTConnectionConstants.STATE_CHANGE;
-import static se.wetcat.qatja.android.MQTTConnectionConstants.STATE_CONNECTED;
-import static se.wetcat.qatja.android.MQTTConnectionConstants.STATE_CONNECTING;
-import static se.wetcat.qatja.android.MQTTConnectionConstants.STATE_CONNECTION_FAILED;
-import static se.wetcat.qatja.android.MQTTConnectionConstants.STATE_NONE;
 import static se.wetcat.qatja.MQTTConstants.AT_LEAST_ONCE;
 import static se.wetcat.qatja.MQTTConstants.AT_MOST_ONCE;
 import static se.wetcat.qatja.MQTTConstants.CONNACK;
@@ -85,6 +78,11 @@ import static se.wetcat.qatja.MQTTConstants.SUBSCRIBE_SUCCESS_AT_MOST_ONCE;
 import static se.wetcat.qatja.MQTTConstants.SUBSCRIBE_SUCCESS_EXACTLY_ONCE;
 import static se.wetcat.qatja.MQTTConstants.UNSUBACK;
 import static se.wetcat.qatja.MQTTConstants.UNSUBSCRIBE;
+import static se.wetcat.qatja.android.MQTTConnectionConstants.STATE_CHANGE;
+import static se.wetcat.qatja.android.MQTTConnectionConstants.STATE_CONNECTED;
+import static se.wetcat.qatja.android.MQTTConnectionConstants.STATE_CONNECTING;
+import static se.wetcat.qatja.android.MQTTConnectionConstants.STATE_CONNECTION_FAILED;
+import static se.wetcat.qatja.android.MQTTConnectionConstants.STATE_NONE;
 
 /**
  * A simple local service implementation of an mqtt interface for android
@@ -1193,11 +1191,21 @@ public class QatjaService extends Service {
       }
     }
 
-    public void cancel() {
+    void cancel() {
+      new DisconnectTask().execute(mmSocket);
+    }
+  }
+
+  private class DisconnectTask extends AsyncTask<Socket, Void, Boolean> {
+    @Override
+    protected Boolean doInBackground(Socket... sockets) {
       try {
-        mmSocket.close();
+        sockets[0].close();
+        return true;
       } catch (IOException e) {
         Log.e(TAG, "close() of connect socket failed", e);
+
+        return false;
       }
     }
   }
