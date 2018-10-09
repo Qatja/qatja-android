@@ -409,6 +409,9 @@ public class QatjaService extends Service {
    *               {@link se.wetcat.qatja.MQTTConstants#EXACTLY_ONCE}.
    */
   public void subscribe(String[] topics, byte[] qoss) {
+    // Ensure the subscribedTopics isn't null
+    if (subscribedTopics == null)
+      subscribedTopics = new HashSet<>();
 
     for(int i = 0; i < topics.length; i++) {
       HashSet<String> newTopics = new HashSet<>();
