@@ -108,7 +108,7 @@ public class QatjaService extends Service {
   /**
    * How long to wait before a reconnect attempt is made
    */
-  private long RECONNECT_TIMER = 5000;
+  private long mReconnectDelay = 5000;
 
   /**
    * Thread to handle setup of connections
@@ -472,6 +472,10 @@ public class QatjaService extends Service {
       } else {
         if (DEBUG)
           Log.d(TAG, "Need to be connected to send " + MQTTHelper.decodePackageName(msg));
+
+        // If we lost the connection, and reconnect is set, let's try to reconnect now!
+        if (doAutomaticReconnect)
+          reconnect();
       }
     } else {
       new WriterTask().execute(msg);
@@ -586,11 +590,15 @@ public class QatjaService extends Service {
     doAutomaticReconnect = reconnect;
   }
 
+  public void setReconnectDelay(long millis) {
+    mReconnectDelay = millis;
+  }
+
   /**
-   * Attempt to reconnect after {@link #RECONNECT_TIMER} milliseconds
+   * Attempt to reconnect after {@link #mReconnectDelay} milliseconds
    */
   public void reconnect() {
-    reconnectHandler.postDelayed(recoonectRunnable, RECONNECT_TIMER);
+    reconnectHandler.postDelayed(recoonectRunnable, mReconnectDelay);
   }
 
   /**
