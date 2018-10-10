@@ -24,6 +24,7 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.util.Log;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -39,6 +40,7 @@ import se.wetcat.qatja.MQTTHelper;
 import se.wetcat.qatja.MQTTIdentifierHelper;
 import se.wetcat.qatja.messages.MQTTConnack;
 import se.wetcat.qatja.messages.MQTTConnect;
+import se.wetcat.qatja.messages.MQTTDisconnect;
 import se.wetcat.qatja.messages.MQTTMessage;
 import se.wetcat.qatja.messages.MQTTPingreq;
 import se.wetcat.qatja.messages.MQTTPuback;
@@ -181,7 +183,9 @@ public class QatjaService extends Service {
   private Runnable recoonectRunnable = new Runnable() {
     @Override
     public void run() {
-      connect();
+      if (mState != STATE_CONNECTING && mState != STATE_CONNECTED) {
+        connect();
+      }
     }
   };
 
@@ -223,30 +227,14 @@ public class QatjaService extends Service {
 
   @Override
   public void onDestroy() {
-    super.onDestroy();
+    cleanUp();
 
-    // Kill everything when we stop the service
-    // Cancel the thread that completed the connection
-    if (mConnectThread != null) {
-      mConnectThread.cancel();
-      mConnectThread = null;
-    }
-
-    // Cancel any thread currently running a connection
-    if (mConnectedThread != null) {
-      mConnectedThread.cancel();
-      mConnectedThread = null;
-    }
-
-    if (mKeepaliveHandler != null) {
-      mKeepaliveHandler.removeCallbacks(mPingSender);
-      mKeepaliveHandler = null;
-    }
-
-    subscribedTopics = null;
+    setState(STATE_NONE);
 
     if (DEBUG)
       Log.d(TAG, "onDestroy");
+
+    super.onDestroy();
   }
 
   @Override
@@ -632,28 +620,7 @@ public class QatjaService extends Service {
     if (DEBUG)
       Log.d(TAG, "connect to: " + host);
 
-    if (mKeepaliveHandler != null) {
-      mKeepaliveHandler.removeCallbacks(mPingSender);
-      mKeepaliveHandler = null;
-    }
-
-    // Cancel any thread attempting to make a connection
-    if (getState() == STATE_CONNECTING) {
-      if (mConnectThread != null) {
-        mConnectThread.cancel();
-        mConnectThread = null;
-      }
-    }
-
-    // Cancel any thread currently running a connection
-    if (mConnectedThread != null) {
-      mConnectedThread.cancel();
-      mConnectedThread = null;
-    }
-
-    if(subscribedTopics != null) {
-      subscribedTopics.clear();
-    }
+    cleanUp();
 
     // Start the thread to connect with the given device
     try {
@@ -785,9 +752,9 @@ public class QatjaService extends Service {
     if (DEBUG)
       Log.d(TAG, "connectionLost");
 
-    if(subscribedTopics != null) {
-      subscribedTopics.clear();
-    }
+    cleanUp();
+
+    setState(STATE_NONE);
 
     if (doAutomaticReconnect)
       reconnect();
@@ -797,10 +764,27 @@ public class QatjaService extends Service {
    * Disconnect the MQTT service
    */
   public void disconnect() {
+    if (mState == STATE_CONNECTED) {
+      sendMessage(MQTTDisconnect.newInstance());
+    }
+  }
+
+  /**
+   * Clean up the connection handling.
+   */
+  private void cleanUp() {
+    if (DEBUG) {
+      Log.d(TAG, "cleanUp()");
+    }
+
     // Cancel any future ping requests
-    if (mKeepaliveHandler != null) {
-      mKeepaliveHandler.removeCallbacks(mPingSender);
-      mKeepaliveHandler = null;
+    try {
+      if (mKeepaliveHandler != null) {
+        mKeepaliveHandler.removeCallbacks(mPingSender);
+        mKeepaliveHandler = null;
+      }
+    } catch (Exception e) {
+      Log.e(TAG, e.getMessage(), e);
     }
 
     // Cancel the thread that completed the connection
@@ -815,11 +799,13 @@ public class QatjaService extends Service {
       mConnectedThread = null;
     }
 
-    if(subscribedTopics != null) {
-      subscribedTopics.clear();
+    try {
+      if (subscribedTopics != null) {
+        subscribedTopics.clear();
+      }
+    } catch (Exception e) {
+      Log.e(TAG, e.getMessage(), e);
     }
-
-    setState(STATE_NONE);
   }
 
   /**
@@ -1173,11 +1159,13 @@ public class QatjaService extends Service {
 
         } catch (IOException e) {
           if (DEBUG)
-            Log.e(TAG, "disconnected", e);
+            Log.e(TAG, "disconnected (this is fine, expected almost)", e);
 
           connectionLost();
 
-          disconnect();
+          cleanUp();
+
+          setState(STATE_NONE);
 
           break;
         }
@@ -1203,21 +1191,26 @@ public class QatjaService extends Service {
     }
 
     void cancel() {
-      new DisconnectTask().execute(mmSocket);
+      new DisconnectTask().execute(mmInStream, mmOutStream, mmSocket);
     }
   }
 
-  private class DisconnectTask extends AsyncTask<Socket, Void, Boolean> {
+  private static class DisconnectTask extends AsyncTask<Closeable, Void, Void> {
     @Override
-    protected Boolean doInBackground(Socket... sockets) {
-      try {
-        sockets[0].close();
-        return true;
-      } catch (IOException e) {
-        Log.e(TAG, "close() of connect socket failed", e);
-
-        return false;
+    protected Void doInBackground(Closeable... closeables) {
+      if (DEBUG) {
+        Log.d(TAG, "[DisconnectTask] Closing streams and socket.");
       }
+
+      for (Closeable closeable : closeables) {
+        try {
+          closeable.close();
+        } catch (IOException e) {
+          Log.e(TAG, e.getMessage(), e);
+        }
+      }
+
+      return null;
     }
   }
 
@@ -1246,14 +1239,18 @@ public class QatjaService extends Service {
     protected void onPostExecute(MQTTMessage sent) {
       super.onPostExecute(sent);
 
-      if (sent != null) {
-        lastSentMessage = System.currentTimeMillis();
+      if (!isCancelled()) {
+        if (sent != null) {
+          lastSentMessage = System.currentTimeMillis();
 
-        try {
-          mKeepaliveHandler.removeCallbacks(mPingSender);
-          mKeepaliveHandler.postDelayed(mPingSender, KEEP_ALIVE_TIMER);
-        } catch (Exception ex) {
-          Log.e(TAG, ex.getMessage(), ex);
+          try {
+            if (mKeepaliveHandler != null) {
+              mKeepaliveHandler.removeCallbacks(mPingSender);
+              mKeepaliveHandler.postDelayed(mPingSender, KEEP_ALIVE_TIMER);
+            }
+          } catch (Exception ex) {
+            Log.e(TAG, ex.getMessage(), ex);
+          }
         }
       }
     }
