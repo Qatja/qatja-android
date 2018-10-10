@@ -1179,11 +1179,8 @@ public class QatjaService extends Service {
       } catch (IOException e) {
         Log.e(TAG, "Exception during write", e);
 
-        // TODO: Unsure if this is correct, maybe a "connectionLost()" instead?
-        disconnect();
-
-        if (doAutomaticReconnect)
-          reconnect();
+        // Just notify the client that the connection was lost!
+        connectionLost();
       }
     }
 
