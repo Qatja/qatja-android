@@ -1163,10 +1163,6 @@ public class QatjaService extends Service {
 
           connectionLost();
 
-          cleanUp();
-
-          setState(STATE_NONE);
-
           break;
         }
       }
@@ -1183,6 +1179,7 @@ public class QatjaService extends Service {
       } catch (IOException e) {
         Log.e(TAG, "Exception during write", e);
 
+        // TODO: Unsure if this is correct, maybe a "connectionLost()" instead?
         disconnect();
 
         if (doAutomaticReconnect)
