@@ -22,6 +22,7 @@ import android.os.AsyncTask;
 import android.os.Binder;
 import android.os.Handler;
 import android.os.IBinder;
+import android.text.TextUtils;
 import android.util.Log;
 
 import java.io.Closeable;
@@ -165,6 +166,11 @@ public class QatjaService extends Service {
    */
   private String clientIdentifier;
 
+  /*
+   * TODO: These should be removed from here in future release, no reason to store them here, right?
+   */
+  private String mUsername, mPassword;
+
   private boolean cleanSession = true;
 
   private boolean willFlag;
@@ -267,7 +273,13 @@ public class QatjaService extends Service {
    * Send a CONNECT message to the server.
    */
   private void connect(String clientIdentifier) {
-    MQTTConnect connect = MQTTConnect.newInstance(clientIdentifier);
+
+    MQTTConnect connect;
+    if (!TextUtils.isEmpty(mUsername) && !TextUtils.isEmpty(mPassword)) {
+      connect = MQTTConnect.newInstance(clientIdentifier, mUsername, mPassword);
+    } else {
+      connect = MQTTConnect.newInstance(clientIdentifier);
+    }
 
     connect.setCleanSession(cleanSession);
 
@@ -539,6 +551,10 @@ public class QatjaService extends Service {
   public void setIdentifier(String clientIdentifier) {
     this.clientIdentifier = clientIdentifier;
   }
+
+  public void setUsername(String username) { this.mUsername = username; }
+
+  public void setPassword(String password) { this.mPassword = password; }
 
   public void setProtocolName(String protocolName) {
     this.protocolName = protocolName;
