@@ -128,7 +128,7 @@ Connecting to an MQTT server can only be done once the service connection has be
 You can of course issue the connection elsewhere, as long as you make sure the service connection is "alive and kicking".
 
 ```kotlin
-// Default host is test.mosquitto.org (you should change this!)
+// You can try broker.hivemq.com or test.mosquitto.org
 mClient.setHost(host)
 
 // Default mqtt port is 1883
