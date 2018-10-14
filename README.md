@@ -16,80 +16,105 @@ First add the MQTT service to your manifest
     android:exported="false"/>
 ```
 
+Declare the needed variabled
+
+```kotlin
+lateinit var mClient: QatjaService
+
+private var isBound = false
+private var isBinding = false
+
+private val mHandler: Handler = Handler(MqttCallback())
+```
+
 The library uses a Handler to communicate to your UI for safety reasons, create a handler that listens for MQTT state and messages.
 
-```java
-Handler mHandler = new Handler(new MQTTCallback());
+```kotlin
+private inner class MqttCallback : Handler.Callback {
+    override fun handleMessage(msg: Message?): Boolean {
+        msg?.let {
+            when (it.what) {
+                MQTTConnectionConstants.STATE_CHANGE -> {
+                    when (msg.arg1) {
+                        MQTTConnectionConstants.STATE_NONE -> {
+                            onMqttDisconnected()
+                        }
+                        MQTTConnectionConstants.STATE_CONNECTING -> {
+                        }
+                        MQTTConnectionConstants.STATE_CONNECTED -> {
+                            onMqttConnected()
+                        }
+                        MQTTConnectionConstants.STATE_CONNECTION_FAILED -> {
+                            onMqttDisconnected()
+                        }
+                        else -> {
+                            Log.e(TAG, "Unhandled MQTT state change")
+                        }
+                    }
+                }
+                3 -> { //MQTTConstants.PUBLISH (has value 3!)
+                    val publish: MQTTPublish = msg.obj as MQTTPublish
+                }
+            }
+        }
 
-private class MQTTCallback implements Handler.Callback {
-  @Override
-  public boolean handleMessage(Message msg) {
-    switch (msg.what) {
-      case STATE_CHANGE:
-        switch (msg.arg1) {
-        case STATE_NONE:
-          Toast.makeText(MainActivity.this, "Not connected", Toast.LENGTH_SHORT).show();
-          return true;
-        case STATE_CONNECTING:
-          Toast.makeText(MainActivity.this, "Trying to connect...", Toast.LENGTH_SHORT).show();
-          return true;
-       case STATE_CONNECTED:
-         Toast.makeText(MainActivity.this, "Yay! Connected!", Toast.LENGTH_SHORT).show();
-         return true;
-       case STATE_CONNECTION_FAILED:
-         Toast.makeText(MainActivity.this, "Connection failed", Toast.LENGTH_SHORT).show();
-         return true;		
-      }
-      return true;
-    case PUBLISH:
-      MQTTPublish publish = (MQTTPublish) msg.obj;
-      String topic = publish.getTopicName();
-      byte[] payload = publish.getPayload();
-      return true;
-    default:
-      return false;
+        return true
     }
-  }
-};
+}
 ```
 
 Create a service connection instance. Also, set your previously created handler as the service handler
 
-```java
-private ServiceConnection connection = new ServiceConnection() {
-  @Override
-  public void onServiceConnected(ComponentName name, IBinder binder) {
-    client = ((QatjaBinder) binder).getService();
-    isBound = true;
-    
-    mqtt.setHandler(mHandler);
-  }
+```kotlin
+private val mConnection: ServiceConnection = object : ServiceConnection {
+    override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+        mClient = (binder as QatjaService.QatjaBinder).service as QatjaService
 
-  @Override
-  public void onServiceDisconnected(ComponentName name) {
-    isBound = false;
-  }
-};
+        isBound = true
+        isBinding = false
+
+        mClient.setHandler(mHandler)
+    }
+
+    override fun onServiceDisconnected(p0: ComponentName?) {
+        isBound = false
+        isBinding = false
+    }
+}
 ```
 
 Bind to the service when application starts.
 
-```java
-@Override
-protected void onStart() {
-  super.onStart();
-  Intent service = new Intent(MainActivity.this, QatjaService.class);
-  bindService(service, connection, Context.BIND_AUTO_CREATE);
+```kotlin
+override fun onResume() {
+    super.onResume()
+
+    if (!isBound && !isBinding) {
+        isBinding = true
+
+        Intent(this@MqttActivity, QatjaService::class.java).apply {
+            bindService(this, mConnection, Context.BIND_AUTO_CREATE)
+        }
+    }
 }
 ```
 
 Unbind the service when application is stopped.
 
-```java
-@Override
-protected void onStop() {
-  super.onStop();
-  unbindService(connection);
+```kotlin
+override fun onPause() {
+    try {
+        mClient.disconnect()
+
+        unbindService(mConnection)
+
+        isBinding = false
+        isBound = false
+    } catch (ex: IllegalArgumentException) {
+        Log.e(TAG, "Couldn't unbind the service, this is probably fine considering the state changes in the app... can probably ignore this.", ex)
+    }
+
+    super.onPause()
 }
 ```
 
@@ -102,47 +127,56 @@ The following small examples show how basic usage for MQTT.
 Connecting to an MQTT server can only be done once the service connection has been established. Therefore you're recommended to attempt the connection in the service connection object after the Handler has been linked.
 You can of course issue the connection elsewhere, as long as you make sure the service connection is "alive and kicking".
 
-```java
+```kotlin
 // Default host is test.mosquitto.org (you should change this!)
-client.setHost(host);
+mClient.setHost(host)
 
 // Default mqtt port is 1883
-client.setPort(1883);
+mClient.setPort(1883)
 
 // Set a unique id for this client-broker combination
-client.setId(clientIdentifier);
+mClient.setId(clientIdentifier)
 
 // Set keep alive time
-client.setKeepAlive(3000);
+mClient.setKeepAlive(3000)
+
+// Set username and password
+mClient.setUsername("my-username")
+mClient.setPassword("my-password")
 
 // Open the connection to the MQTT server
-client.connect();
+mClient.connect()
 ```
 
 ## Subscribe to topic
 
 There are multiple ways of subscribing to a topic.
 
-```java
+```kotlin
 // Subscribe to a topic with Quality of Service AT_MOST_ONCE
-mqtt.subscribe(topic);
+mClient.subscribe(topic)
+
 // Subscribe to a topic with specified Quality of Service ()
-mqtt.subscribe(topic, EXACTLY_ONCE);
+mClient.subscribe(topic, EXACTLY_ONCE)
+
 // Subscribe to multiple topics (String[]) with Quality of Service AT_MOST_ONCE
-mqtt.subscribe(topics[]);
+mClient.subscribe(topics[])
+
 // Subscribe to multiple topics (String[]) with specified quality of service (byte[]) for each topic
-mqtt.subscribe(topics[], qoss[]);
+mClient.subscribe(topics[], qoss[])
 ```
 
 ## Publish to topic
 
 There are multiple ways of publishing to an MQTT topic.
 
-```java
+```kotlin
 // Publish a String message
-mqtt.publish("mytopic", "my message");
+mClient.publish("mytopic", "my message")
+
 // Publish a byte[] message
-mqtt.publish("mytopic", message[]);
+mClient.publish("mytopic", message[])
+
 // Publish a byte[] message with RETAIN flag set
-mqtt.publish("mytopic", message[], true);
+mClient.publish("mytopic", message[], true)
 ```
